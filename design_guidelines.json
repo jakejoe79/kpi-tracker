@@ -1,0 +1,128 @@
+{
+  "identity": {
+    "persona": "E1 - The Anti-AI Designer",
+    "mission": "Create a high-performance, athletic, dark-mode KPI tracker that feels like a tactical command center, not a spreadsheet.",
+    "principles": [
+      "Fusion over Imitation: Mix 'Fitness Tracker' aesthetics with 'Financial Dashboard' precision.",
+      "Emotion First: The user should feel 'Locked In' and 'Productive'.",
+      "Content is King: The numbers (KPIs) are the heroes. Make them big and legible.",
+      "Contrast: High contrast neon against deep obsidian backgrounds."
+    ]
+  },
+  "theme": {
+    "mode": "dark",
+    "archetype": "The Performance Pro (Dark Variant)",
+    "vibe": "Tactical, High-Energy, Precision",
+    "background_strategy": "Deep Obsidian (#09090B) with subtle noise texture to prevent banding."
+  },
+  "typography": {
+    "headings": {
+      "font_family": "Barlow Condensed, sans-serif",
+      "usage": "All KPI numbers, big stats, and section titles.",
+      "weights": ["700", "800"],
+      "letter_spacing": "tracking-tight"
+    },
+    "body": {
+      "font_family": "Inter, sans-serif",
+      "usage": "Labels, inputs, list items, help text.",
+      "weights": ["400", "500"],
+      "letter_spacing": "tracking-normal"
+    },
+    "installation": "Import 'Barlow Condensed' and 'Inter' from Google Fonts in index.css"
+  },
+  "colors": {
+    "palette": {
+      "background": "#09090B",
+      "surface": "#18181B",
+      "surface_highlight": "#27272A",
+      "border": "rgba(255, 255, 255, 0.1)",
+      "primary": "#F97316",
+      "primary_glow": "rgba(249, 115, 22, 0.4)",
+      "secondary": "#3B82F6",
+      "success": "#22C55E",
+      "text_primary": "#FAFAFA",
+      "text_secondary": "#A1A1AA"
+    },
+    "usage_rules": [
+      "Never use pure black (#000000). Use #09090B.",
+      "Use Primary Orange (#F97316) for 'Call to Action' and 'Earnings' progress.",
+      "Use Secondary Blue (#3B82F6) for 'Bookings' and 'Spins'.",
+      "Use Success Green (#22C55E) ONLY for 'Profit' and 'On Track' status indicators."
+    ]
+  },
+  "layout": {
+    "strategy": "Mobile-First Bento Grid (Mode B - High Density)",
+    "grid_system": "grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 p-4 md:p-8",
+    "container_padding": "p-4 md:p-6",
+    "spacing_scale": "Generous internal padding (p-6) for cards to let data breathe.",
+    "sections": {
+      "header": "Sticky top, glassmorphism (backdrop-blur-xl), contains Date Toggle.",
+      "hero": "Full width (col-span-full) 'Earnings Command Center'. Big progress bar.",
+      "actions": "2x2 Grid of large touch-friendly buttons for quick data entry.",
+      "stats_stack": "Vertical stack of KPI cards (Calls, Bookings, Profit).",
+      "history": "Drawer or bottom section for log history."
+    }
+  },
+  "components": {
+    "library": "Shadcn/UI (Heavily Customized)",
+    "custom_components": [
+      {
+        "name": "KPICard",
+        "description": "A dark card with a glowing top border (using primary/secondary colors), big number, label, and a mini progress bar.",
+        "style": "bg-zinc-900 border border-white/10 rounded-xl p-5 relative overflow-hidden"
+      },
+      {
+        "name": "ActionGrid",
+        "description": "Grid of big buttons for 'Add Call', 'Add Booking', etc.",
+        "style": "grid grid-cols-2 gap-3"
+      },
+      {
+        "name": "ProgressBar",
+        "description": "Custom animated progress bar with 'glow' effect.",
+        "style": "h-3 rounded-full bg-zinc-800 overflow-hidden"
+      }
+    ],
+    "shadcn_modifications": [
+      "Card: Remove default shadows, add 1px white/10 border.",
+      "Button: Use 'h-12' or 'h-14' for mobile touch targets. Pill shapes.",
+      "Dialog: Use Drawer (Sheet) on mobile for 'Add' actions instead of center modal."
+    ]
+  },
+  "visual_enhancers": {
+    "textures": "Add a subtle SVG noise overlay to the body background to reduce digital flatness.",
+    "glows": "Use 'shadow-[0_0_30px_-10px_rgba(var(--color),0.3)]' on active cards.",
+    "borders": "Use 'tracing beam' effect or simple top-border highlight for active states."
+  },
+  "media": {
+    "images": [
+      {
+        "category": "Spins/Wins",
+        "url": "https://images.unsplash.com/photo-1705046332420-abc89468ef92?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzNzl8MHwxfHNlYXJjaHwyfHwzZCUyMGFic3RyYWN0JTIwZ29sZCUyMHRyb3BoeSUyMGRhcmslMjBiYWNrZ3JvdW5kfGVufDB8fHx8MTc3MDYwMzkwMnww&ixlib=rb-4.1.0&q=85",
+        "description": "Abstract Gold Cubes - Use as a subtle background or header image for the 'Spins' modal or section."
+      },
+      {
+        "category": "Growth/Data",
+        "url": "https://images.unsplash.com/photo-1762279389006-43963a0cee55?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxOTJ8MHwxfHNlYXJjaHwxfHxuZW9uJTIwYmx1ZSUyMGFic3RyYWN0JTIwZGF0YSUyMGZsb3clMjBkYXJrJTIwYmFja2dyb3VuZHxlbnwwfHx8fDE3NzA2MDM5MDd8MA&ixlib=rb-4.1.0&q=85",
+        "description": "Neon Blue Lines - Use as a background for the 'Earnings' Hero card (with low opacity overlay)."
+      }
+    ],
+    "icons": "Use 'Lucide-React' (default). Stroke width 1.5px for elegance."
+  },
+  "instructions_to_main_agent": [
+    "1. SETUP: Install 'Barlow Condensed' font immediately.",
+    "2. CSS: Update tailwind.config.js to include the custom colors (Zinc 950, Orange 500, etc).",
+    "3. LAYOUT: Build the 'Dashboard' page first. It's the core.",
+    "4. LOGIC: Ensure the 'Biweekly' calculation logic (1st-14th, 15th-End) is robust in the backend, but Frontend must display the current period clearly.",
+    "5. MOBILE: Test everything on mobile view. Buttons must be thumb-friendly.",
+    "6. DATA-TESTID: Add data-testid to all inputs and buttons (e.g., 'add-call-btn', 'booking-time-input')."
+  ],
+  "UNIVERSAL_GUIDELINES_FOR_MAIN_AGENT": [
+    "Dark colors look good when used independently without gradients. DO NOT use dark colors as gradients.",
+    "Don't make generic centered layouts. Use grids.",
+    "Create depth through layered design elements with z-index hierarchy.",
+    "Use glass-morphism effects with backdrop filters (12-24px blur) for sticky headers.",
+    "NEVER use AI assistant Emoji characters like 🤖🧠 etc.",
+    "Every interaction needs micro-animations.",
+    "Use 'sonner' for toasts."
+  ]
+}
