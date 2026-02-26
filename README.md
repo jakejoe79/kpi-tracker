@@ -1,6 +1,52 @@
 # KPI Tracker Application
 
-A full-stack KPI tracking application with forecasting and analytics capabilities.
+A full-stack KPI tracking application with elite performance infrastructure, forecasting, and real-time risk monitoring.
+
+## Features
+
+- Daily KPI tracking (calls, reservations, profit)
+- Biweekly period management with automatic archiving
+- Team forecasting and analytics
+- Risk scoring and intervention signals
+- Customizable goals and targets
+- Multi-user support ready
+
+## Monetization Tiers
+
+| Feature | Trial | Individual | Pro | Group |
+|---------|-------|------------|-----|-------|
+| **Duration** | 14 days | Unlimited | Unlimited | Unlimited |
+| **Individual Dashboard** | ✅ | ✅ | ✅ | ✅ |
+| **Custom Goals** | ❌ | ✅ | ✅ | ✅ |
+| **Peso Conversion** | ❌ | ✅ | ✅ | ✅ |
+| **Historical Reports** | 7 days | Unlimited | Unlimited | Unlimited |
+| **Export Data** | ❌ | ✅ | ✅ | ✅ |
+| **Period Summary** | ❌ | Top 5 Days | Top 5 Days | Top 5 Days |
+| **Team Dashboard** | ❌ | ❌ | ✅ | ✅ |
+| **Team Projection** | ❌ | ❌ | ✅ (daily 6PM) | ✅ (realtime) |
+| **Real-Time Projections** | ❌ | ❌ | ❌ | ✅ |
+| **Risk Scoring Engine** | ❌ | ❌ | ❌ | ✅ |
+| **Top 5 Intervention Signals** | ❌ | ❌ | ❌ | ✅ |
+| **Team Forecast** | ❌ | ❌ | ❌ | ✅ |
+| **Confidence Indicators** | ❌ | ❌ | ❌ | ✅ |
+| **Trend Analysis** | ❌ | ❌ | ❌ | ✅ |
+| **Alert System** | ❌ | ❌ | ❌ | ✅ |
+| **Update Frequency** | Manual | Manual | Daily 6 PM | Real-time (20s) |
+| **Price** | Free | $9/mo | $29/mo | $99/mo |
+
+**Plan Positioning:**
+- **Trial:** Try before you buy - basic individual tracking (14 days)
+- **Individual:** Solo performers - custom goals, full history, top 5 days this period
+- **Pro:** Team leaders - daily team insights and projections
+- **Group:** Managers - real-time forecasting, risk scoring, Top 5 intervention signals, trend analysis
+
+**Group Plan Exclusive Features:**
+- Real-time projections (live calculation of rep performance)
+- Risk scoring (algorithm-based priority ranking)
+- Top 5 intervention signals (Momentum + Risk cards)
+- Team forecast (aggregate projection vs goal)
+- Confidence indicators (High/Medium/Low stability rating)
+- Trend analysis (3-day velocity comparison)
 
 ## Tech Stack
 
@@ -8,6 +54,7 @@ A full-stack KPI tracking application with forecasting and analytics capabilitie
 - **Frontend:** React with shadcn/ui components
 - **Database:** MongoDB
 - **Deployment:** Render
+- **Scheduler:** APScheduler (period archiving, daily reset, snapshots)
 
 ## Quick Start
 
@@ -38,15 +85,6 @@ See [DEPLOYMENT.md](./DEPLOYMENT.md) for detailed deployment instructions.
 2. Connect repository to Render
 3. Use the `render.yaml` blueprint for automatic deployment
 4. Configure MongoDB connection string in environment variables
-
-## Features
-
-- Daily KPI tracking (calls, reservations, profit)
-- Biweekly period management with automatic archiving
-- Team forecasting and analytics
-- Risk scoring and intervention signals
-- Customizable goals and targets
-- Multi-user support ready
 
 ## Environment Variables
 

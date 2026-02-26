@@ -240,10 +240,10 @@ function App() {
   const [modal, setModal] = useState(null);
   const [settingsModal, setSettingsModal] = useState(false);
   
-  // Team forecast state (Group plan only)
+  // Team forecast state (Individual+ plans)
   const [teamForecast, setTeamForecast] = useState(null);
   const [topSignals, setTopSignals] = useState([]);
-  const [showTeamDashboard, setShowTeamDashboard] = useState(false);
+  const [showTeamDashboard, setShowTeamDashboard] = useState(true); // Always show for Individual+
   
   // Form states
   const [bookingProfit, setBookingProfit] = useState('');
@@ -259,6 +259,7 @@ function App() {
   
   const today = new Date().toISOString().split('T')[0];
   const isPro = settings?.user_plan === 'pro';
+  const isIndividualOrHigher = settings?.user_plan && ['individual', 'pro', 'group'].includes(settings.user_plan);
   
   const fetchData = useCallback(async () => {
     try {
@@ -283,6 +284,20 @@ function App() {
         setPeriodStats(periodRes.data);
       } catch (e) {
         // Free tier - no access
+      }
+      
+      // Fetch team forecast and signals for Individual+ plans
+      if (settingsRes.data?.user_plan && ['individual', 'pro', 'group'].includes(settingsRes.data.user_plan)) {
+        try {
+          const [forecastRes, signalsRes] = await Promise.all([
+            axios.get(`${API}/team/forecast`),
+            axios.get(`${API}/team/top-signals`),
+          ]);
+          setTeamForecast(forecastRes.data);
+          setTopSignals(signalsRes.data.signals || []);
+        } catch (e) {
+          console.error('Error fetching team data:', e);
+        }
       }
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -484,6 +499,11 @@ function App() {
       
       {/* Content */}
       <main className="max-w-2xl mx-auto px-4 py-4 space-y-4 pb-32">
+        
+        {/* Team Forecast Dashboard - Individual+ Plans */}
+        {isIndividualOrHigher && showTeamDashboard && teamForecast && (
+          <ForecastDashboard forecast={teamForecast} signals={topSignals} />
+        )}
         
         {/* Combined Goal Banner */}
         {stats && (
