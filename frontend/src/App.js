@@ -6,6 +6,8 @@ import {
   Plus, Trash2, Play, Square, Download, Settings, X, Loader2,
   RefreshCw, ChevronDown, ChevronUp, Zap, Lock
 } from 'lucide-react';
+import ForecastDashboard from './ForecastDashboard';
+import { useRealtimePolling } from './hooks/use-realtime-polling';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${API_URL}/api`;
@@ -237,6 +239,11 @@ function App() {
   const [todayEntry, setTodayEntry] = useState(null);
   const [modal, setModal] = useState(null);
   const [settingsModal, setSettingsModal] = useState(false);
+  
+  // Team forecast state (Group plan only)
+  const [teamForecast, setTeamForecast] = useState(null);
+  const [topSignals, setTopSignals] = useState([]);
+  const [showTeamDashboard, setShowTeamDashboard] = useState(false);
   
   // Form states
   const [bookingProfit, setBookingProfit] = useState('');
