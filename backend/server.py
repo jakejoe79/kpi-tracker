@@ -72,11 +72,12 @@ FEATURES = {
     "custom_goals": {"label": "Custom Goals", "description": "Set personalized KPI targets", "required_plan": "individual"},
     "historical_reports": {"label": "Historical Reports", "description": "Access reports beyond 14 days", "required_plan": "individual"},
     "peso_conversion": {"label": "Peso Conversion", "description": "Automatic USD to MXN conversion with fees", "required_plan": "individual"},
+    "team_dashboard": {"label": "Team Dashboard", "description": "View team-wide KPI stats and basic forecasting", "required_plan": "individual"},
+    "top_signals": {"label": "Top 5 Signals", "description": "Intervention signals sorted by risk", "required_plan": "individual"},
     "multiple_periods": {"label": "Multiple Periods", "description": "Compare across custom date ranges", "required_plan": "pro"},
-    "team_dashboard": {"label": "Team Dashboard", "description": "View team-wide KPI stats", "required_plan": "pro"},
+    "daily_snapshots": {"label": "Daily Snapshots", "description": "Daily snapshots at 6 PM instead of real-time", "required_plan": "pro"},
     "advanced_analytics": {"label": "Advanced Analytics", "description": "Detailed performance insights and trends", "required_plan": "group"},
-    "realtime_forecasting": {"label": "Real-Time Forecasting", "description": "Live team forecasting and risk monitoring", "required_plan": "group"},
-    "top_signals": {"label": "Top 5 Signals", "description": "Intervention signals sorted by risk", "required_plan": "group"},
+    "realtime_forecasting": {"label": "Real-Time Forecasting", "description": "Live team forecasting and risk monitoring (20s polling)", "required_plan": "group"},
     "alert_system": {"label": "Alert System", "description": "Smart alerts with cooldowns", "required_plan": "group"},
 }
 
@@ -1376,15 +1377,15 @@ async def get_goals():
 @api_router.get("/team/forecast", response_model=TeamForecast)
 async def get_team_forecast():
     user = get_current_user_sync()
-    access = check_feature_access(user, "advanced_analytics")
+    access = check_feature_access(user, "team_dashboard")
     
     if not access["allowed"]:
         raise HTTPException(
             status_code=403,
             detail={
-                "error": "Team forecasting requires Group plan",
+                "error": "Team forecasting requires Individual plan or higher",
                 "current_plan": user.plan,
-                "required_plan": "group"
+                "required_plan": "individual"
             }
         )
     
@@ -1487,33 +1488,34 @@ async def get_top_signals(limit: int = 5, force_refresh: bool = False):
     Elite Top 5 Signals - Smart Hybrid Model
     
     Plan-Based Behavior:
-    - Free: No access
-    - Pro: Daily cached snapshot (updates once per day)
-    - Group: Real-time calculation (always live)
+    - Trial: No access
+    - Individual: Real-time calculation (basic forecasting)
+    - Pro: Daily cached snapshot (updates once per day at 6 PM)
+    - Group: Real-time calculation with 20s polling (always live)
     
     Backend calculates everything - frontend just displays
     Sorted by risk_score descending
     Max 5 signals enforced
     """
     user = get_current_user_sync()
-    access = check_feature_access(user, "advanced_analytics")
+    access = check_feature_access(user, "top_signals")
     
     if not access["allowed"]:
         raise HTTPException(
             status_code=403,
             detail={
-                "error": "Top signals requires Group plan",
+                "error": "Top signals requires Individual plan or higher",
                 "current_plan": user.plan,
-                "required_plan": "group",
-                "message": "Upgrade to Group plan for Top 5 intervention signals, forecast risk indicators, and escalation alerts"
+                "required_plan": "individual",
+                "message": "Upgrade to Individual plan for Top 5 intervention signals and forecast risk indicators"
             }
         )
     
     _, _, period_id = get_current_period()
     
     # SMART HYBRID MODEL
-    if user.plan == "group":
-        # GROUP PLAN: Real-time calculation
+    if user.plan in ["individual", "group"]:
+        # INDIVIDUAL & GROUP PLAN: Real-time calculation
         # Dashboard always live, calculations on-demand
         signals, team_forecast_data = await calculate_top_signals_live(CURRENT_USER_ID, limit)
         
