@@ -1343,31 +1343,6 @@ async def get_settings():
         "update_mode": "realtime" if user.plan == "group" else "daily" if user.plan in ["pro", "individual"] else "manual"
     }
 
-@api_router.put("/settings")
-async def update_settings(settings_update: Dict[str, Any]):
-    user = get_current_user_sync()
-    access = check_feature_access(user, "custom_goals")
-    
-    if not access["allowed"]:
-        raise HTTPException(
-            status_code=403,
-            detail={
-                "error": "Custom goals require Pro or Group plan",
-                "current_plan": user.plan,
-                "required_plan": access["required_plan"]
-            }
-        )
-    
-    updated_goals = settings_update.get("goals", {})
-    success = await update_user_goals(CURRENT_USER_ID, updated_goals)
-    
-    return {
-        "success": success,
-        "message": "Settings updated" if success else "No changes",
-        "goals": {**DEFAULT_GOALS, **updated_goals},
-        "updated_at": datetime.utcnow().isoformat()
-    }
-
 # Keep old endpoint for backward compatibility
 @api_router.get("/goals")
 async def get_goals():
@@ -1895,22 +1870,6 @@ async def get_settings():
     return {"user_id": CURRENT_USER_ID, "user_plan": settings.get("user_plan", CURRENT_USER_PLAN), "peso_rate": settings.get("peso_rate", 17.50), "goals": settings.get("goals", await get_user_goals(CURRENT_USER_ID))}
 
 
-@api_router.put("/settings")
-async def update_settings(settings_update: dict):
-    """Update user settings"""
-    existing = await db.user_settings.find_one({"user_id": CURRENT_USER_ID})
-    if not existing:
-        existing = {"user_id": CURRENT_USER_ID, "user_plan": CURRENT_USER_PLAN, "peso_rate": 17.50, "goals": await get_user_goals(CURRENT_USER_ID)}
-    merged = {**existing, **settings_update, "updated_at": datetime.utcnow()}
-    await db.user_settings.update_one({"user_id": CURRENT_USER_ID}, {"$set": merged}, upsert=True)
-    if "goals" in settings_update:
-        await update_user_goals(CURRENT_USER_ID, settings_update["goals"])
-    if "user_plan" in settings_update:
-        global CURRENT_USER_PLAN
-        CURRENT_USER_PLAN = settings_update["user_plan"]
-    return merged
-
-
 @api_router.get("/entries/today")
 async def get_today_entry():
     """Get today's daily entry"""
@@ -2384,37 +2343,17 @@ async def get_settings():
 @api_router.put("/settings")
 async def update_settings(settings_update: dict):
     """Update user settings"""
-    # Get existing settings
+    global CURRENT_USER_PLAN
+    
     existing = await db.user_settings.find_one({"user_id": CURRENT_USER_ID})
-
     if not existing:
-        existing = {
-            "user_id": CURRENT_USER_ID,
-            "user_plan": CURRENT_USER_PLAN,
-            "peso_rate": 17.50,
-            "goals": await get_user_goals(CURRENT_USER_ID)
-        }
-
-    # Merge settings
-    merged = {**existing, **settings_update}
-    merged["updated_at"] = datetime.utcnow()
-
-    # Save to database
-    await db.user_settings.update_one(
-        {"user_id": CURRENT_USER_ID},
-        {"$set": merged},
-        upsert=True
-    )
-
-    # Update user goals if provided
+        existing = {"user_id": CURRENT_USER_ID, "user_plan": CURRENT_USER_PLAN, "peso_rate": 17.50, "goals": await get_user_goals(CURRENT_USER_ID)}
+    merged = {**existing, **settings_update, "updated_at": datetime.utcnow()}
+    await db.user_settings.update_one({"user_id": CURRENT_USER_ID}, {"$set": merged}, upsert=True)
     if "goals" in settings_update:
         await update_user_goals(CURRENT_USER_ID, settings_update["goals"])
-
-    # Update global user plan if changed
     if "user_plan" in settings_update:
-        global CURRENT_USER_PLAN
         CURRENT_USER_PLAN = settings_update["user_plan"]
-
     return merged
 
 
