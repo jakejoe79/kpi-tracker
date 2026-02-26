@@ -1,3 +1,30 @@
+"""
+KPI Tracker API - Performance Infrastructure
+
+ELITE FEATURES:
+- Smart Hybrid Model: Real-time for Group, Daily snapshots for Pro
+- Elite Risk Scoring: (gap * 0.7) + (conversion_drop * 0.3) with trend multipliers
+- Smart Thresholds: Minimum change detection to prevent noise
+- Alert Cooldowns: 1hr high risk, 2hr medium, 4hr low - prevents toxic anxiety
+- Risk Tiers: 🔴 Red (70+), 🟡 Yellow (40-69), 🟢 Green (<40)
+- Top 5 Signals: Sorted by risk_score descending - highest operational priority
+- Decision Signals: Answers "Who needs attention right now?" not "What changed by 0.3%?"
+
+MONETIZATION TIERS:
+- Free: Individual stats only
+- Pro: Daily snapshots at 6 PM, custom goals, basic team leaderboard
+- Group: Real-time calculations, live risk monitoring, Top 5 intervention signals
+
+ARCHITECTURE:
+- Backend calculates everything - frontend displays
+- MongoDB stores daily snapshots and alert history
+- Scheduled jobs: Period archiving (midnight 1st/15th), Daily reset (midnight), Snapshots (6 PM)
+- Change detection prevents alert spam
+- Polling every 20 seconds for Group plan (good for Render free tier)
+
+This is Performance Infrastructure Territory.
+"""
+
 from fastapi import FastAPI, APIRouter, HTTPException, BackgroundTasks, Depends
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -34,23 +61,26 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 
 CURRENT_USER_ID = "user_001"
-CURRENT_USER_PLAN = "group"
+CURRENT_USER_PLAN = "individual"  # trial, individual, pro, or group
 
 # =============================================================================
 # FEATURE REGISTRY
 # =============================================================================
 
 FEATURES = {
-    "export_data": {"label": "Export Data", "description": "Download CSV and PDF reports", "required_plan": "pro"},
-    "custom_goals": {"label": "Custom Goals", "description": "Set personalized KPI targets", "required_plan": "pro"},
-    "historical_reports": {"label": "Historical Reports", "description": "Access reports beyond 14 days", "required_plan": "pro"},
+    "export_data": {"label": "Export Data", "description": "Download CSV and PDF reports", "required_plan": "individual"},
+    "custom_goals": {"label": "Custom Goals", "description": "Set personalized KPI targets", "required_plan": "individual"},
+    "historical_reports": {"label": "Historical Reports", "description": "Access reports beyond 14 days", "required_plan": "individual"},
+    "peso_conversion": {"label": "Peso Conversion", "description": "Automatic USD to MXN conversion with fees", "required_plan": "individual"},
     "multiple_periods": {"label": "Multiple Periods", "description": "Compare across custom date ranges", "required_plan": "pro"},
-    "team_dashboard": {"label": "Team Dashboard", "description": "View team-wide KPI stats", "required_plan": "group"},
+    "team_dashboard": {"label": "Team Dashboard", "description": "View team-wide KPI stats", "required_plan": "pro"},
     "advanced_analytics": {"label": "Advanced Analytics", "description": "Detailed performance insights and trends", "required_plan": "group"},
-    "priority_support": {"label": "Priority Support", "description": "24/7 priority customer support", "required_plan": "group"},
+    "realtime_forecasting": {"label": "Real-Time Forecasting", "description": "Live team forecasting and risk monitoring", "required_plan": "group"},
+    "top_signals": {"label": "Top 5 Signals", "description": "Intervention signals sorted by risk", "required_plan": "group"},
+    "alert_system": {"label": "Alert System", "description": "Smart alerts with cooldowns", "required_plan": "group"},
 }
 
-PLAN_HIERARCHY = {"free": 0, "pro": 1, "group": 2}
+PLAN_HIERARCHY = {"trial": 0, "individual": 1, "pro": 2, "group": 3}
 
 class DenialReason:
     PLAN_LIMIT = "plan_limit"
@@ -336,6 +366,8 @@ class TeamForecast(BaseModel):
     days_elapsed: int
     days_remaining: int
     confidence: str
+    trend_direction: str = "→"  # Team velocity trend: ↑ ↓ →
+    risk_indicator: str = "🟢"  # 🔴 🟡 🟢 based on percent_of_goal
     rep_forecasts: List[RepForecast]
 
 class InterventionSignal(BaseModel):
@@ -344,15 +376,229 @@ class InterventionSignal(BaseModel):
     signal_type: str
     risk_score: float
     risk_level: str
+    risk_tier: str = "🟢 Low Risk"
     projected_reservations: float
+    projected_percent_of_goal: float = 0.0
     gap: float
     trend: str
+    trend_direction: str = "→"  # ↑, ↓, or →
+    confidence_level: str = "medium"
     action_required: str
+    can_alert: bool = True
+    has_significant_change: bool = True
+    change_details: List[str] = []
+    
+    # Decision signals - answers "who needs attention now?"
+    operational_priority: int = 0  # 1-5, where 1 is highest priority
 
 class TopSignalsResponse(BaseModel):
     signals: List[InterventionSignal]
     generated_at: datetime
     update_mode: str
+    is_cached: bool = False
+    cache_timestamp: Optional[datetime] = None
+
+class DailySnapshot(BaseModel):
+    """Daily cached snapshot for non-realtime plans"""
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    user_id: str
+    period_id: str
+    snapshot_date: str
+    signals: List[InterventionSignal]
+    team_forecast: dict
+    generated_at: datetime = Field(default_factory=datetime.utcnow)
+    snapshot_type: str = "daily"  # daily, manual, scheduled
+
+# =============================================================================
+# SNAPSHOT MANAGEMENT - Smart Hybrid Model
+# =============================================================================
+
+async def get_or_create_daily_snapshot(user_id: str, period_id: str) -> Optional[dict]:
+    """
+    Get today's cached snapshot or return None if needs refresh
+    Used for Pro plan (daily updates)
+    """
+    today_str = date.today().isoformat()
+    
+    snapshot = await db.daily_snapshots.find_one({
+        "user_id": user_id,
+        "period_id": period_id,
+        "snapshot_date": today_str,
+        "snapshot_type": "daily"
+    })
+    
+    return snapshot
+
+async def save_daily_snapshot(user_id: str, period_id: str, signals: List[InterventionSignal], team_forecast: dict):
+    """
+    Save daily snapshot to MongoDB
+    Replaces any existing snapshot for today
+    """
+    today_str = date.today().isoformat()
+    
+    snapshot = DailySnapshot(
+        user_id=user_id,
+        period_id=period_id,
+        snapshot_date=today_str,
+        signals=signals,
+        team_forecast=team_forecast,
+        snapshot_type="daily"
+    )
+    
+    await db.daily_snapshots.update_one(
+        {
+            "user_id": user_id,
+            "period_id": period_id,
+            "snapshot_date": today_str,
+            "snapshot_type": "daily"
+        },
+        {"$set": snapshot.dict()},
+        upsert=True
+    )
+    
+    return snapshot
+
+async def calculate_top_signals_live(user_id: str, limit: int = 5) -> tuple:
+    """
+    Calculate Top 5 signals in real-time with smart thresholds
+    Used for Group plan with realtime mode
+    
+    Includes:
+    - Minimum change thresholds
+    - Alert cooldown management
+    - Risk tier classification
+    """
+    start_date, end_date, period_id = get_current_period()
+    
+    # For now, single user - expand for multi-user teams
+    user_ids = [user_id]
+    
+    rep_forecasts = []
+    team_projected = 0
+    team_current = 0
+    team_goal = 0
+    
+    for uid in user_ids:
+        entries = await db.daily_entries.find({
+            "user_id": uid,
+            "date": {"$gte": start_date, "$lte": end_date}
+        }).to_list(1000)
+        
+        user_goals = await get_user_goals(uid)
+        goal = user_goals["reservations_biweekly"]
+        
+        forecast = await get_rep_forecast(uid, entries, goal, start_date, end_date)
+        rep_forecasts.append(forecast)
+        
+        team_projected += forecast.projected_reservations
+        team_current += sum(len(e.get("bookings", [])) for e in entries)
+        team_goal += goal
+    
+    start = date.fromisoformat(start_date)
+    end = date.fromisoformat(end_date)
+    total_days = (end - start).days + 1
+    today = date.today()
+    days_elapsed = min((today - start).days + 1, total_days)
+    days_remaining = max(0, total_days - days_elapsed)
+    
+    team_gap = team_projected - team_goal
+    percent_of_goal = (team_projected / team_goal) * 100 if team_goal > 0 else 0
+    
+    confidence_map = {"high": 3, "medium": 2, "low": 1}
+    if rep_forecasts:
+        avg_conf = sum(confidence_map.get(r.confidence, 1) for r in rep_forecasts) / len(rep_forecasts)
+        team_confidence = {3: "high", 2: "medium", 1: "low"}.get(round(avg_conf), "medium")
+    else:
+        team_confidence = "low"
+    
+    remaining = max(0, team_goal - team_current)
+    required_daily = remaining / days_remaining if days_remaining > 0 else 0
+    
+    team_forecast_data = {
+        "team_projected_reservations": round(team_projected, 1),
+        "team_current_reservations": team_current,
+        "team_goal": team_goal,
+        "team_gap": round(team_gap, 1),
+        "percent_of_goal": round(percent_of_goal, 1),
+        "required_daily_rate": round(required_daily, 1),
+        "days_elapsed": days_elapsed,
+        "days_remaining": days_remaining,
+        "confidence": team_confidence
+    }
+    
+    # Sort by risk_score descending - highest risk first
+    sorted_reps = sorted(rep_forecasts, key=lambda x: x.risk_score, reverse=True)
+    
+    # Enforce max 5
+    limit = min(limit, 5)
+    
+    signals = []
+    for idx, rep in enumerate(sorted_reps[:limit]):
+        if rep.gap < 0 and rep.risk_level in ["high", "medium"]:
+            signal_type = "risk"
+        elif rep.gap >= 0:
+            signal_type = "momentum"
+        else:
+            signal_type = "risk"
+        
+        # Get risk tier with emoji
+        risk_tier = get_risk_tier_label(rep.risk_score)
+        
+        # Calculate projected percent of goal
+        projected_percent = (rep.projected_reservations / goal * 100) if goal > 0 else 0
+        
+        # Extract trend direction from trend string
+        trend_direction = "→"
+        if "↑" in rep.trend:
+            trend_direction = "↑"
+        elif "↓" in rep.trend:
+            trend_direction = "↓"
+        
+        # Smart action recommendations based on risk level and cooldown
+        can_alert = await AlertCooldownManager.can_send_alert(rep.user_id, signal_type, rep.risk_level)
+        
+        if rep.risk_level == "high":
+            action = "🚨 Immediate coaching required" if can_alert else "⏳ Alert on cooldown - coaching needed"
+        elif rep.risk_level == "medium":
+            action = "⚠️ Schedule check-in this week" if can_alert else "⏳ Alert on cooldown - monitor closely"
+        elif rep.gap >= 0:
+            action = "✅ On track - maintain momentum"
+        else:
+            action = "⭐ Star performer - recognize achievement"
+        
+        signal_dict = {
+            "user_id": rep.user_id,
+            "rank": idx + 1,
+            "signal_type": signal_type,
+            "risk_score": rep.risk_score,
+            "risk_level": rep.risk_level,
+            "risk_tier": risk_tier,
+            "projected_reservations": rep.projected_reservations,
+            "projected_percent_of_goal": round(projected_percent, 1),
+            "gap": rep.gap,
+            "trend": rep.trend,
+            "trend_direction": trend_direction,
+            "confidence_level": rep.confidence,
+            "action_required": action,
+            "can_alert": can_alert,
+            "operational_priority": idx + 1  # Rank = priority (1 is highest)
+        }
+        
+        # Check for significant changes
+        change_info = await SignalChangeDetector.has_significant_change(rep.user_id, signal_dict)
+        signal_dict["has_significant_change"] = change_info["is_significant"]
+        signal_dict["change_details"] = change_info.get("changes", [])
+        
+        # Save to history for future comparison
+        await SignalChangeDetector.save_signal_history(rep.user_id, signal_dict)
+        
+        # Record alert if sent
+        if can_alert and change_info["is_significant"] and rep.risk_level in ["high", "medium"]:
+            await AlertCooldownManager.record_alert(rep.user_id, signal_type, rep.risk_level)
+        
+        signals.append(InterventionSignal(**signal_dict))
+    
+    return signals, team_forecast_data
 
 # =============================================================================
 # USER GOALS SERVICE - Database-driven goals
@@ -408,16 +654,198 @@ def normalize_entry(entry: dict, period_id: str = "", user_id: str = CURRENT_USE
     }
 
 # =============================================================================
-# FORECASTING ENGINE
+# SMART THRESHOLDS - Prevent Toxic Behavior
 # =============================================================================
 
-def calculate_risk_score(projected: float, goal: float, trend_direction: str) -> float:
+# Minimum change thresholds before triggering updates
+RISK_SCORE_CHANGE_THRESHOLD = 5.0  # Must change by 5+ points to trigger alert
+RANKING_CHANGE_THRESHOLD = 1  # Must move up/down 1+ positions to notify
+GAP_CHANGE_THRESHOLD = 2.0  # Gap must change by 2+ reservations
+
+# Alert cooldown periods (in seconds)
+ALERT_COOLDOWN_HIGH_RISK = 3600  # 1 hour for high risk alerts
+ALERT_COOLDOWN_MEDIUM_RISK = 7200  # 2 hours for medium risk alerts
+ALERT_COOLDOWN_LOW_RISK = 14400  # 4 hours for low risk alerts
+
+# Risk tier thresholds
+RISK_TIER_HIGH = 70  # Red zone
+RISK_TIER_MEDIUM = 40  # Yellow zone
+# Below 40 = Green zone
+
+class AlertCooldownManager:
+    """Prevents alert spam and anxiety-driven behavior"""
+    
+    @staticmethod
+    async def can_send_alert(user_id: str, alert_type: str, risk_level: str) -> bool:
+        """
+        Check if enough time has passed since last alert
+        Returns True if alert can be sent, False if in cooldown
+        """
+        cooldown_key = f"{user_id}_{alert_type}_{risk_level}"
+        
+        last_alert = await db.alert_cooldowns.find_one({"key": cooldown_key})
+        
+        if not last_alert:
+            return True
+        
+        # Determine cooldown period based on risk level
+        if risk_level == "high":
+            cooldown_seconds = ALERT_COOLDOWN_HIGH_RISK
+        elif risk_level == "medium":
+            cooldown_seconds = ALERT_COOLDOWN_MEDIUM_RISK
+        else:
+            cooldown_seconds = ALERT_COOLDOWN_LOW_RISK
+        
+        time_since_last = (datetime.utcnow() - last_alert["timestamp"]).total_seconds()
+        
+        return time_since_last >= cooldown_seconds
+    
+    @staticmethod
+    async def record_alert(user_id: str, alert_type: str, risk_level: str):
+        """Record that an alert was sent"""
+        cooldown_key = f"{user_id}_{alert_type}_{risk_level}"
+        
+        await db.alert_cooldowns.update_one(
+            {"key": cooldown_key},
+            {
+                "$set": {
+                    "user_id": user_id,
+                    "alert_type": alert_type,
+                    "risk_level": risk_level,
+                    "timestamp": datetime.utcnow()
+                }
+            },
+            upsert=True
+        )
+
+class SignalChangeDetector:
+    """Detects meaningful changes to prevent noise"""
+    
+    @staticmethod
+    async def has_significant_change(user_id: str, new_signal: dict) -> dict:
+        """
+        Compare new signal with previous to detect meaningful changes
+        Returns dict with change flags and details
+        """
+        # Get previous signal from last snapshot
+        previous = await db.signal_history.find_one(
+            {"user_id": user_id},
+            sort=[("timestamp", -1)]
+        )
+        
+        if not previous:
+            # First time - always significant
+            return {
+                "is_significant": True,
+                "risk_score_changed": True,
+                "ranking_changed": True,
+                "tier_changed": True,
+                "changes": ["initial_signal"]
+            }
+        
+        prev_data = previous.get("signal", {})
+        changes = []
+        
+        # Check risk score change
+        risk_score_delta = abs(new_signal.get("risk_score", 0) - prev_data.get("risk_score", 0))
+        risk_score_changed = risk_score_delta >= RISK_SCORE_CHANGE_THRESHOLD
+        if risk_score_changed:
+            changes.append(f"risk_score_changed_by_{risk_score_delta:.1f}")
+        
+        # Check ranking change
+        rank_delta = abs(new_signal.get("rank", 0) - prev_data.get("rank", 0))
+        ranking_changed = rank_delta >= RANKING_CHANGE_THRESHOLD
+        if ranking_changed:
+            changes.append(f"rank_changed_by_{rank_delta}")
+        
+        # Check tier change (green/yellow/red)
+        prev_tier = get_risk_tier(prev_data.get("risk_score", 0))
+        new_tier = get_risk_tier(new_signal.get("risk_score", 0))
+        tier_changed = prev_tier != new_tier
+        if tier_changed:
+            changes.append(f"tier_changed_from_{prev_tier}_to_{new_tier}")
+        
+        # Check gap change
+        gap_delta = abs(new_signal.get("gap", 0) - prev_data.get("gap", 0))
+        gap_changed = gap_delta >= GAP_CHANGE_THRESHOLD
+        if gap_changed:
+            changes.append(f"gap_changed_by_{gap_delta:.1f}")
+        
+        is_significant = risk_score_changed or ranking_changed or tier_changed or gap_changed
+        
+        return {
+            "is_significant": is_significant,
+            "risk_score_changed": risk_score_changed,
+            "ranking_changed": ranking_changed,
+            "tier_changed": tier_changed,
+            "gap_changed": gap_changed,
+            "changes": changes,
+            "risk_score_delta": risk_score_delta,
+            "rank_delta": rank_delta
+        }
+    
+    @staticmethod
+    async def save_signal_history(user_id: str, signal: dict):
+        """Save signal to history for future comparison"""
+        await db.signal_history.insert_one({
+            "user_id": user_id,
+            "signal": signal,
+            "timestamp": datetime.utcnow()
+        })
+        
+        # Keep only last 30 days of history
+        cutoff = datetime.utcnow() - timedelta(days=30)
+        await db.signal_history.delete_many({
+            "user_id": user_id,
+            "timestamp": {"$lt": cutoff}
+        })
+
+def get_risk_tier(risk_score: float) -> str:
+    """Get risk tier: red, yellow, or green"""
+    if risk_score >= RISK_TIER_HIGH:
+        return "red"
+    elif risk_score >= RISK_TIER_MEDIUM:
+        return "yellow"
+    return "green"
+
+def get_risk_tier_label(risk_score: float) -> str:
+    """Get human-readable risk tier label"""
+    tier = get_risk_tier(risk_score)
+    if tier == "red":
+        return "🔴 High Risk"
+    elif tier == "yellow":
+        return "🟡 Medium Risk"
+    return "🟢 Low Risk"
+
+# =============================================================================
+# FORECASTING ENGINE - Elite Risk Scoring
+# =============================================================================
+
+def calculate_risk_score(projected: float, goal: float, trend_direction: str, conversion_drop: float = 0) -> float:
+    """
+    Elite risk scoring formula:
+    risk_score = (goal - projected) * weight1 + conversion_drop * weight2
+    
+    Higher score = higher risk
+    """
     if goal <= 0:
         return 0
-    percent_of_goal = (projected / goal) * 100
-    base_risk = max(0, 100 - percent_of_goal)
+    
+    # Weight 1: Gap from goal (normalized to 0-100)
+    gap = max(0, goal - projected)
+    gap_score = (gap / goal) * 100 if goal > 0 else 0
+    
+    # Weight 2: Conversion drop penalty
+    conversion_penalty = conversion_drop * 50  # Scale conversion drop impact
+    
+    # Trend multiplier
     trend_multiplier = 1.3 if trend_direction == "↓ declining" else 0.7 if trend_direction == "↑ improving" else 1.0
-    return min(100, max(0, base_risk * trend_multiplier))
+    
+    # Combined risk score
+    base_risk = (gap_score * 0.7) + (conversion_penalty * 0.3)  # 70% gap, 30% conversion
+    final_risk = min(100, max(0, base_risk * trend_multiplier))
+    
+    return final_risk
 
 def get_risk_level(risk_score: float) -> str:
     if risk_score >= 70:
@@ -443,6 +871,25 @@ def calculate_trend(recent_entries: List[Dict], older_entries: List[Dict]) -> st
     elif change_ratio < 0.9:
         return "↓ declining"
     return "→ stable"
+
+def calculate_conversion_drop(entries: List[Dict]) -> float:
+    """Calculate conversion rate drop from first half to second half of period"""
+    if len(entries) < 4:
+        return 0
+    
+    mid = len(entries) // 2
+    first_half = entries[:mid]
+    second_half = entries[mid:]
+    
+    first_calls = sum(e.get("calls_received", 0) for e in first_half)
+    first_bookings = sum(len(e.get("bookings", [])) for e in first_half)
+    second_calls = sum(e.get("calls_received", 0) for e in second_half)
+    second_bookings = sum(len(e.get("bookings", [])) for e in second_half)
+    
+    first_rate = (first_bookings / first_calls * 100) if first_calls > 0 else 0
+    second_rate = (second_bookings / second_calls * 100) if second_calls > 0 else 0
+    
+    return max(0, first_rate - second_rate)  # Positive = drop in conversion
 
 def calculate_confidence(entries: List[Dict]) -> str:
     if len(entries) < 3:
@@ -489,7 +936,10 @@ async def get_rep_forecast(user_id: str, entries: List[Dict], goal: float, start
     older = entries[-6:-3] if len(entries) >= 6 else entries[:max(0, len(entries)-3)]
     trend = calculate_trend(recent, older)
     
-    risk_score = calculate_risk_score(projected, goal, trend)
+    # Calculate conversion drop for elite risk scoring
+    conversion_drop = calculate_conversion_drop(entries)
+    
+    risk_score = calculate_risk_score(projected, goal, trend, conversion_drop)
     risk_level = get_risk_level(risk_score)
     confidence = calculate_confidence(entries)
     
@@ -689,6 +1139,29 @@ async def daily_reset_cron_task():
     
     logger.info("Daily reset complete")
 
+async def daily_snapshot_cron_task():
+    """
+    Generate daily snapshots at 6 PM for Pro plan users
+    This provides structured check-ins without real-time noise
+    """
+    logger.info("Running daily snapshot generation at 6 PM...")
+    
+    _, _, period_id = get_current_period()
+    
+    # For now, single user - expand for multi-user
+    # In production, query all Pro plan users
+    user = get_current_user_sync()
+    
+    if user.plan in ["pro", "group"]:
+        try:
+            signals, team_forecast_data = await calculate_top_signals_live(CURRENT_USER_ID, 5)
+            await save_daily_snapshot(CURRENT_USER_ID, period_id, signals, team_forecast_data)
+            logger.info(f"Generated daily snapshot for user {CURRENT_USER_ID}")
+        except Exception as e:
+            logger.error(f"Failed to generate daily snapshot: {e}")
+    
+    logger.info("Daily snapshot generation complete")
+
 # =============================================================================
 # SCHEDULER
 # =============================================================================
@@ -741,8 +1214,16 @@ def start_scheduler():
         replace_existing=True
     )
     
+    scheduler.add_job(
+        daily_snapshot_cron_task,
+        CronTrigger(hour=18, minute=0),  # 6 PM daily
+        id='daily_snapshot',
+        name='Generate daily Top 5 snapshot at 6 PM for Pro users',
+        replace_existing=True
+    )
+    
     scheduler.start()
-    logger.info("APScheduler started")
+    logger.info("APScheduler started with 3 jobs: period archiver, daily reset, daily snapshot")
 
 # =============================================================================
 # MIGRATION - With chunking to prevent memory issues
@@ -858,7 +1339,7 @@ async def get_settings():
             "custom_goals": access,
             "forecasting": check_feature_access(user, "advanced_analytics")
         },
-        "update_mode": "realtime" if user.plan == "group" else "daily"
+        "update_mode": "realtime" if user.plan == "group" else "daily" if user.plan in ["pro", "individual"] else "manual"
     }
 
 @api_router.put("/settings")
@@ -954,6 +1435,37 @@ async def get_team_forecast():
     remaining = max(0, team_goal - team_current)
     required_daily = remaining / days_remaining if days_remaining > 0 else 0
     
+    # Calculate team trend direction based on last 3 days velocity
+    all_entries = []
+    for uid in user_ids:
+        entries = await db.daily_entries.find({
+            "user_id": uid,
+            "date": {"$gte": start_date, "$lte": end_date}
+        }).sort("date", -1).to_list(1000)
+        all_entries.extend(entries)
+    
+    team_trend_direction = "→"
+    if len(all_entries) >= 6:
+        recent_3 = all_entries[:3]
+        older_3 = all_entries[3:6]
+        recent_bookings = sum(len(e.get("bookings", [])) for e in recent_3)
+        older_bookings = sum(len(e.get("bookings", [])) for e in older_3)
+        
+        if older_bookings > 0:
+            change_ratio = recent_bookings / older_bookings
+            if change_ratio > 1.1:
+                team_trend_direction = "↑"
+            elif change_ratio < 0.9:
+                team_trend_direction = "↓"
+    
+    # Calculate team risk indicator based on percent_of_goal
+    if percent_of_goal >= 90:
+        team_risk_indicator = "🟢"  # On track
+    elif percent_of_goal >= 70:
+        team_risk_indicator = "🟡"  # At risk
+    else:
+        team_risk_indicator = "🔴"  # High risk
+    
     return TeamForecast(
         team_projected_reservations=round(team_projected, 1),
         team_current_reservations=team_current,
@@ -964,11 +1476,25 @@ async def get_team_forecast():
         days_elapsed=days_elapsed,
         days_remaining=days_remaining,
         confidence=team_confidence,
+        trend_direction=team_trend_direction,
+        risk_indicator=team_risk_indicator,
         rep_forecasts=rep_forecasts
     )
 
 @api_router.get("/team/top-signals", response_model=TopSignalsResponse)
-async def get_top_signals(limit: int = 5):
+async def get_top_signals(limit: int = 5, force_refresh: bool = False):
+    """
+    Elite Top 5 Signals - Smart Hybrid Model
+    
+    Plan-Based Behavior:
+    - Free: No access
+    - Pro: Daily cached snapshot (updates once per day)
+    - Group: Real-time calculation (always live)
+    
+    Backend calculates everything - frontend just displays
+    Sorted by risk_score descending
+    Max 5 signals enforced
+    """
     user = get_current_user_sync()
     access = check_feature_access(user, "advanced_analytics")
     
@@ -978,45 +1504,54 @@ async def get_top_signals(limit: int = 5):
             detail={
                 "error": "Top signals requires Group plan",
                 "current_plan": user.plan,
-                "required_plan": "group"
+                "required_plan": "group",
+                "message": "Upgrade to Group plan for Top 5 intervention signals, forecast risk indicators, and escalation alerts"
             }
         )
     
-    forecast_data = await get_team_forecast()
-    rep_forecasts = forecast_data.rep_forecasts
+    _, _, period_id = get_current_period()
     
-    sorted_reps = sorted(rep_forecasts, key=lambda x: x.risk_score, reverse=True)
-    
-    signals = []
-    for idx, rep in enumerate(sorted_reps[:limit]):
-        signal_type = "risk" if rep.risk_level in ["high", "medium"] else "momentum"
+    # SMART HYBRID MODEL
+    if user.plan == "group":
+        # GROUP PLAN: Real-time calculation
+        # Dashboard always live, calculations on-demand
+        signals, team_forecast_data = await calculate_top_signals_live(CURRENT_USER_ID, limit)
         
-        if rep.risk_level == "high":
-            action = "Immediate coaching required"
-        elif rep.risk_level == "medium":
-            action = "Schedule check-in this week"
-        elif rep.gap >= 0:
-            action = "On track - maintain momentum"
-        else:
-            action = "Star performer - recognize"
+        # Save snapshot for historical tracking
+        await save_daily_snapshot(CURRENT_USER_ID, period_id, signals, team_forecast_data)
         
-        signals.append(InterventionSignal(
-            user_id=rep.user_id,
-            rank=idx + 1,
-            signal_type=signal_type,
-            risk_score=rep.risk_score,
-            risk_level=rep.risk_level,
-            projected_reservations=rep.projected_reservations,
-            gap=rep.gap,
-            trend=rep.trend,
-            action_required=action
-        ))
+        return TopSignalsResponse(
+            signals=signals,
+            generated_at=datetime.utcnow(),
+            update_mode="realtime",
+            is_cached=False
+        )
     
-    return TopSignalsResponse(
-        signals=signals,
-        generated_at=datetime.utcnow(),
-        update_mode="realtime" if user.plan == "group" else "daily"
-    )
+    else:
+        # PRO PLAN: Daily cached snapshot
+        # Check if we have today's snapshot
+        snapshot = await get_or_create_daily_snapshot(CURRENT_USER_ID, period_id)
+        
+        if snapshot and not force_refresh:
+            # Return cached snapshot
+            return TopSignalsResponse(
+                signals=[InterventionSignal(**s) for s in snapshot["signals"]],
+                generated_at=snapshot["generated_at"],
+                update_mode="daily",
+                is_cached=True,
+                cache_timestamp=snapshot["generated_at"]
+            )
+        
+        # No snapshot or force refresh - calculate and cache
+        signals, team_forecast_data = await calculate_top_signals_live(CURRENT_USER_ID, limit)
+        await save_daily_snapshot(CURRENT_USER_ID, period_id, signals, team_forecast_data)
+        
+        return TopSignalsResponse(
+            signals=signals,
+            generated_at=datetime.utcnow(),
+            update_mode="daily",
+            is_cached=False
+        )
 
 # PERIOD ENDPOINTS
 @api_router.get("/periods/current")
@@ -1246,8 +1781,17 @@ async def startup_event():
     await db.user_goals.create_index("user_id", unique=True)
     await db.daily_archives.create_index([("user_id", 1), ("date", 1), ("type", 1)])
     
+    # Index for daily snapshots (smart hybrid model)
+    await db.daily_snapshots.create_index([("user_id", 1), ("period_id", 1), ("snapshot_date", 1)])
+    await db.daily_snapshots.create_index("generated_at")
+    
+    # Indexes for smart thresholds and alert cooldowns
+    await db.alert_cooldowns.create_index("key", unique=True)
+    await db.alert_cooldowns.create_index("timestamp")
+    await db.signal_history.create_index([("user_id", 1), ("timestamp", -1)])
+    
     start_scheduler()
-    logger.info("Application startup complete with multi-user support")
+    logger.info("Application startup complete with smart thresholds and alert cooldowns to prevent toxic behavior")
 
 @app.on_event("shutdown")
 async def shutdown_event():
