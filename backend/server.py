@@ -1763,6 +1763,298 @@ async def get_biweekly_stats():
         )
     )
 
+
+# =============================================================================
+# NEW ENDPOINTS - Daily Stats, Settings, Entries, Timer, Export
+# =============================================================================
+
+@api_router.get("/stats/today")
+async def get_today_stats():
+    """Get statistics for today only"""
+    today = date.today().isoformat()
+    entry = await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": today})
+    
+    if not entry:
+        user_goals = await get_user_goals(CURRENT_USER_ID)
+        return {
+            "date": today,
+            "calls": {"current": 0, "goal": user_goals.get("calls_daily", 0), "diff": -user_goals.get("calls_daily", 0), "status": "behind"},
+            "reservations": {"current": 0, "goal": user_goals.get("reservations_daily", 0), "diff": -user_goals.get("reservations_daily", 0), "status": "behind", "prepaid_count": 0, "refund_protection_count": 0},
+            "conversion_rate": {"current": 0, "goal": 0, "status": "on_track"},
+            "profit": {"current": 0, "goal": user_goals.get("profit_daily", 0), "diff": -user_goals.get("profit_daily", 0), "status": "behind"},
+            "spins": {"current": 0, "goal": user_goals.get("spins_daily", 0), "diff": -user_goals.get("spins_daily", 0), "status": "behind"},
+            "combined": {"current": 0, "goal": 0, "diff": 0, "status": "on_track"},
+            "avg_time": {"current": 0, "goal": user_goals.get("avg_time_per_booking", 0), "status": "on_track"},
+            "earnings": {"usd": {"profit": 0, "spins": 0, "misc": 0, "total": 0}, "pesos": {"gross_pesos": 0, "service_fee": 0, "payday_deduction": 0, "net_pesos": 0}, "peso_rate": user_goals.get("peso_rate", 17.50)}
+        }
+    
+    user_goals = await get_user_goals(CURRENT_USER_ID)
+    bookings = entry.get("bookings", [])
+    spins = entry.get("spins", [])
+    misc_income = entry.get("misc_income", [])
+    calls = entry.get("calls_received", 0)
+    
+    total_bookings = len(bookings)
+    total_profit = sum(b.get("profit", 0) for b in bookings)
+    total_spins = sum(s.get("amount", 0) for s in spins)
+    total_misc = sum(m.get("amount", 0) for m in misc_income)
+    prepaid_count = sum(1 for b in bookings if b.get("is_prepaid", False))
+    refund_count = sum(1 for b in bookings if b.get("has_refund_protection", False))
+    
+    times = [b.get("time_since_last", 0) for b in bookings if b.get("time_since_last", 0) > 0]
+    avg_time = sum(times) / len(times) if times else 0
+    conversion_rate = (total_bookings / calls * 100) if calls > 0 else 0
+    combined = total_profit + total_spins
+    
+    peso_rate = user_goals.get("peso_rate", 17.50)
+    gross_pesos = (total_profit + total_spins + total_misc) * peso_rate
+    service_fee = gross_pesos * 0.17
+    net_pesos = gross_pesos - service_fee
+    
+    return {
+        "date": today,
+        "calls": {"current": calls, "goal": user_goals.get("calls_daily", 0), "diff": calls - user_goals.get("calls_daily", 0), "status": "ahead" if calls >= user_goals.get("calls_daily", 0) else "behind"},
+        "reservations": {"current": total_bookings, "goal": user_goals.get("reservations_daily", 0), "diff": total_bookings - user_goals.get("reservations_daily", 0), "status": "ahead" if total_bookings >= user_goals.get("reservations_daily", 0) else "behind", "prepaid_count": prepaid_count, "refund_protection_count": refund_count},
+        "conversion_rate": {"current": round(conversion_rate, 2), "goal": user_goals.get("conversion_rate_goal", 0), "status": "ahead" if conversion_rate >= user_goals.get("conversion_rate_goal", 0) else "behind"},
+        "profit": {"current": round(total_profit, 2), "goal": user_goals.get("profit_daily", 0), "diff": round(total_profit - user_goals.get("profit_daily", 0), 2), "status": "ahead" if total_profit >= user_goals.get("profit_daily", 0) else "behind"},
+        "spins": {"current": round(total_spins, 2), "goal": user_goals.get("spins_daily", 0), "diff": round(total_spins - user_goals.get("spins_daily", 0), 2), "status": "ahead" if total_spins >= user_goals.get("spins_daily", 0) else "behind"},
+        "combined": {"current": round(combined, 2), "goal": user_goals.get("combined_daily", 0), "diff": round(combined - user_goals.get("combined_daily", 0), 2), "status": "ahead" if combined >= user_goals.get("combined_daily", 0) else "behind"},
+        "avg_time": {"current": round(avg_time, 1), "goal": user_goals.get("avg_time_per_booking", 0), "status": "ahead" if avg_time <= user_goals.get("avg_time_per_booking", 0) or avg_time == 0 else "behind"},
+        "earnings": {"usd": {"profit": round(total_profit, 2), "spins": round(total_spins, 2), "misc": round(total_misc, 2), "total": round(total_profit + total_spins + total_misc, 2)}, "pesos": {"gross_pesos": round(gross_pesos, 2), "service_fee": round(service_fee, 2), "payday_deduction": 0, "net_pesos": round(net_pesos, 2)}, "peso_rate": peso_rate}
+    }
+
+
+@api_router.get("/stats/week")
+async def get_week_stats():
+    """Get statistics for the past 7 days - Pro+ only"""
+    user = get_current_user_sync()
+    access = check_feature_access(user, "multiple_periods")
+    if not access["allowed"]:
+        raise HTTPException(status_code=403, detail={"error": "Weekly statistics require Pro plan or higher", "current_plan": user.plan, "required_plan": "pro"})
+    
+    end_date = date.today()
+    start_date = end_date - timedelta(days=6)
+    entries = await db.daily_entries.find({"user_id": CURRENT_USER_ID, "date": {"$gte": start_date.isoformat(), "$lte": end_date.isoformat()}}).to_list(1000)
+    
+    user_goals = await get_user_goals(CURRENT_USER_ID)
+    all_bookings, all_spins, all_misc = [], [], []
+    for e in entries:
+        all_bookings.extend(e.get("bookings", []))
+        all_spins.extend(e.get("spins", []))
+        all_misc.extend(e.get("misc_income", []))
+    
+    total_profit = sum(b.get("profit", 0) for b in all_bookings)
+    total_spins_amount = sum(s.get("amount", 0) for s in all_spins)
+    total_misc = sum(m.get("amount", 0) for m in all_misc)
+    
+    peso_rate = user_goals.get("peso_rate", 17.50)
+    gross_pesos = (total_profit + total_spins_amount + total_misc) * peso_rate
+    service_fee = gross_pesos * 0.17
+    net_pesos = gross_pesos - service_fee
+    
+    return {"period": "week", "start_date": start_date.isoformat(), "end_date": end_date.isoformat(), "days_tracked": len(entries), "earnings": {"usd": {"profit": round(total_profit, 2), "spins": round(total_spins_amount, 2), "misc": round(total_misc, 2), "total": round(total_profit + total_spins_amount + total_misc, 2)}, "pesos": {"gross_pesos": round(gross_pesos, 2), "service_fee": round(service_fee, 2), "payday_deduction": 0, "net_pesos": round(net_pesos, 2)}, "peso_rate": peso_rate}}
+
+
+@api_router.get("/stats/period")
+async def get_period_stats():
+    """Get statistics for current pay period - Pro+ only"""
+    user = get_current_user_sync()
+    access = check_feature_access(user, "multiple_periods")
+    if not access["allowed"]:
+        raise HTTPException(status_code=403, detail={"error": "Period statistics require Pro plan or higher", "current_plan": user.plan, "required_plan": "pro"})
+    
+    start_date, end_date, period_id = get_current_period()
+    entries = await db.daily_entries.find({"user_id": CURRENT_USER_ID, "date": {"$gte": start_date, "$lte": end_date}}).to_list(1000)
+    
+    user_goals = await get_user_goals(CURRENT_USER_ID)
+    all_bookings, all_spins, all_misc = [], [], []
+    for e in entries:
+        all_bookings.extend(e.get("bookings", []))
+        all_spins.extend(e.get("spins", []))
+        all_misc.extend(e.get("misc_income", []))
+    
+    total_profit = sum(b.get("profit", 0) for b in all_bookings)
+    total_spins_amount = sum(s.get("amount", 0) for s in all_spins)
+    total_misc = sum(m.get("amount", 0) for m in all_misc)
+    
+    peso_rate = user_goals.get("peso_rate", 17.50)
+    gross_pesos = (total_profit + total_spins_amount + total_misc) * peso_rate
+    service_fee = gross_pesos * 0.17
+    net_pesos = gross_pesos - service_fee
+    
+    return {"period": "biweekly", "period_id": period_id, "start_date": start_date, "end_date": end_date, "days_tracked": len(entries), "earnings": {"usd": {"profit": round(total_profit, 2), "spins": round(total_spins_amount, 2), "misc": round(total_misc, 2), "total": round(total_profit + total_spins_amount + total_misc, 2)}, "pesos": {"gross_pesos": round(gross_pesos, 2), "service_fee": round(service_fee, 2), "payday_deduction": 0, "net_pesos": round(net_pesos, 2)}, "peso_rate": peso_rate}}
+
+
+@api_router.get("/settings")
+async def get_settings():
+    """Get user settings"""
+    settings = await db.user_settings.find_one({"user_id": CURRENT_USER_ID})
+    if not settings:
+        user_goals = await get_user_goals(CURRENT_USER_ID)
+        return {"user_id": CURRENT_USER_ID, "user_plan": CURRENT_USER_PLAN, "peso_rate": user_goals.get("peso_rate", 17.50), "goals": user_goals}
+    return {"user_id": CURRENT_USER_ID, "user_plan": settings.get("user_plan", CURRENT_USER_PLAN), "peso_rate": settings.get("peso_rate", 17.50), "goals": settings.get("goals", await get_user_goals(CURRENT_USER_ID))}
+
+
+@api_router.put("/settings")
+async def update_settings(settings_update: dict):
+    """Update user settings"""
+    existing = await db.user_settings.find_one({"user_id": CURRENT_USER_ID})
+    if not existing:
+        existing = {"user_id": CURRENT_USER_ID, "user_plan": CURRENT_USER_PLAN, "peso_rate": 17.50, "goals": await get_user_goals(CURRENT_USER_ID)}
+    merged = {**existing, **settings_update, "updated_at": datetime.utcnow()}
+    await db.user_settings.update_one({"user_id": CURRENT_USER_ID}, {"$set": merged}, upsert=True)
+    if "goals" in settings_update:
+        await update_user_goals(CURRENT_USER_ID, settings_update["goals"])
+    if "user_plan" in settings_update:
+        global CURRENT_USER_PLAN
+        CURRENT_USER_PLAN = settings_update["user_plan"]
+    return merged
+
+
+@api_router.get("/entries/today")
+async def get_today_entry():
+    """Get today's daily entry"""
+    today = date.today().isoformat()
+    _, _, period_id = get_current_period()
+    entry = await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": today})
+    if not entry:
+        entry = {"id": str(uuid.uuid4()), "user_id": CURRENT_USER_ID, "date": today, "period_id": period_id, "calls_received": 0, "bookings": [], "spins": [], "misc_income": [], "work_timer_start": None, "created_at": datetime.utcnow(), "updated_at": datetime.utcnow()}
+        await db.daily_entries.insert_one(entry)
+    return entry
+
+
+@api_router.put("/entries/{date}/calls")
+async def update_calls(date: str, calls_received: int):
+    """Update calls received for a date"""
+    try:
+        datetime.fromisoformat(date)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+    _, _, period_id = get_current_period()
+    await db.daily_entries.update_one({"user_id": CURRENT_USER_ID, "date": date}, {"$set": {"calls_received": calls_received, "updated_at": datetime.utcnow()}, "$setOnInsert": {"id": str(uuid.uuid4()), "user_id": CURRENT_USER_ID, "date": date, "period_id": period_id, "bookings": [], "spins": [], "misc_income": [], "created_at": datetime.utcnow()}}, upsert=True)
+    return await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
+
+
+@api_router.post("/entries/{date}/timer/start")
+async def start_timer(date: str):
+    """Start work timer"""
+    try:
+        datetime.fromisoformat(date)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+    entry = await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
+    if entry and entry.get("work_timer_start"):
+        raise HTTPException(status_code=400, detail="Timer already running")
+    _, _, period_id = get_current_period()
+    await db.daily_entries.update_one({"user_id": CURRENT_USER_ID, "date": date}, {"$set": {"work_timer_start": datetime.utcnow().isoformat(), "updated_at": datetime.utcnow()}, "$setOnInsert": {"id": str(uuid.uuid4()), "user_id": CURRENT_USER_ID, "date": date, "period_id": period_id, "calls_received": 0, "bookings": [], "spins": [], "misc_income": [], "created_at": datetime.utcnow()}}, upsert=True)
+    return await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
+
+
+@api_router.post("/entries/{date}/timer/stop")
+async def stop_timer(date: str):
+    """Stop work timer"""
+    try:
+        datetime.fromisoformat(date)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+    entry = await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
+    if not entry or not entry.get("work_timer_start"):
+        raise HTTPException(status_code=400, detail="No timer running")
+    timer_start = datetime.fromisoformat(entry["work_timer_start"])
+    elapsed_minutes = (datetime.utcnow() - timer_start).total_seconds() / 60
+    await db.daily_entries.update_one({"user_id": CURRENT_USER_ID, "date": date}, {"$set": {"work_timer_start": None, "updated_at": datetime.utcnow()}, "$inc": {"total_time_minutes": elapsed_minutes}})
+    return await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
+
+
+@api_router.post("/entries/{date}/bookings")
+async def add_booking(date: str, booking: BookingCreate):
+    """Add a booking"""
+    try:
+        datetime.fromisoformat(date)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+    _, _, period_id = get_current_period()
+    booking_dict = booking.dict()
+    booking_dict["id"] = str(uuid.uuid4())
+    booking_dict["timestamp"] = datetime.utcnow()
+    await db.daily_entries.update_one({"user_id": CURRENT_USER_ID, "date": date}, {"$push": {"bookings": booking_dict}, "$set": {"updated_at": datetime.utcnow()}, "$setOnInsert": {"id": str(uuid.uuid4()), "user_id": CURRENT_USER_ID, "date": date, "period_id": period_id, "calls_received": 0, "spins": [], "misc_income": [], "created_at": datetime.utcnow()}}, upsert=True)
+    return await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
+
+
+@api_router.post("/entries/{date}/spins")
+async def add_spin(date: str, spin: SpinCreate):
+    """Add a spin"""
+    try:
+        datetime.fromisoformat(date)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+    _, _, period_id = get_current_period()
+    spin_dict = spin.dict()
+    spin_dict["id"] = str(uuid.uuid4())
+    spin_dict["timestamp"] = datetime.utcnow()
+    await db.daily_entries.update_one({"user_id": CURRENT_USER_ID, "date": date}, {"$push": {"spins": spin_dict}, "$set": {"updated_at": datetime.utcnow()}, "$setOnInsert": {"id": str(uuid.uuid4()), "user_id": CURRENT_USER_ID, "date": date, "period_id": period_id, "calls_received": 0, "bookings": [], "misc_income": [], "created_at": datetime.utcnow()}}, upsert=True)
+    return await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
+
+
+@api_router.post("/entries/{date}/misc")
+async def add_misc_income(date: str, misc: MiscIncomeCreate):
+    """Add miscellaneous income"""
+    try:
+        datetime.fromisoformat(date)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+    _, _, period_id = get_current_period()
+    misc_dict = misc.dict()
+    misc_dict["id"] = str(uuid.uuid4())
+    misc_dict["timestamp"] = datetime.utcnow()
+    await db.daily_entries.update_one({"user_id": CURRENT_USER_ID, "date": date}, {"$push": {"misc_income": misc_dict}, "$set": {"updated_at": datetime.utcnow()}, "$setOnInsert": {"id": str(uuid.uuid4()), "user_id": CURRENT_USER_ID, "date": date, "period_id": period_id, "calls_received": 0, "bookings": [], "spins": [], "created_at": datetime.utcnow()}}, upsert=True)
+    return await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
+
+
+@api_router.delete("/entries/{date}/bookings/{booking_id}")
+async def delete_booking(date: str, booking_id: str):
+    """Delete a booking"""
+    try:
+        datetime.fromisoformat(date)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+    entry = await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
+    if not entry:
+        raise HTTPException(status_code=404, detail="Entry not found")
+    if not any(b.get("id") == booking_id for b in entry.get("bookings", [])):
+        raise HTTPException(status_code=404, detail="Booking not found")
+    await db.daily_entries.update_one({"user_id": CURRENT_USER_ID, "date": date}, {"$pull": {"bookings": {"id": booking_id}}, "$set": {"updated_at": datetime.utcnow()}})
+    return await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
+
+
+@api_router.get("/export/csv")
+async def export_csv():
+    """Export data as CSV - Individual+ only"""
+    user = get_current_user_sync()
+    access = check_feature_access(user, "export_data")
+    if not access["allowed"]:
+        raise HTTPException(status_code=403, detail={"error": "CSV export requires Individual plan or higher", "current_plan": user.plan, "required_plan": "individual"})
+    entries = await db.daily_entries.find({"user_id": CURRENT_USER_ID}).sort("date", 1).to_list(10000)
+    import io, csv
+    from fastapi.responses import Response
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["Date", "Calls", "Bookings", "Conversion Rate", "Profit", "Spins", "Misc Income", "Total Time (min)"])
+    for entry in entries:
+        bookings = entry.get("bookings", [])
+        spins = entry.get("spins", [])
+        misc_income = entry.get("misc_income", [])
+        calls = entry.get("calls_received", 0)
+        total_bookings = len(bookings)
+        total_profit = sum(b.get("profit", 0) for b in bookings)
+        total_spins = sum(s.get("amount", 0) for s in spins)
+        total_misc = sum(m.get("amount", 0) for m in misc_income)
+        conversion_rate = (total_bookings / calls * 100) if calls > 0 else 0
+        total_time = entry.get("total_time_minutes", 0)
+        writer.writerow([entry.get("date"), calls, total_bookings, f"{conversion_rate:.2f}%", f"${total_profit:.2f}", f"${total_spins:.2f}", f"${total_misc:.2f}", f"{total_time:.1f}"])
+    return Response(content=output.getvalue(), media_type="text/csv", headers={"Content-Disposition": f"attachment; filename=kpi_export_{date.today().isoformat()}.csv"})
+
+
 # APP SETUP
 app.include_router(api_router)
 
@@ -1800,3 +2092,706 @@ async def shutdown_event():
     scheduler.shutdown()
     client.close()
     logger.info("Application shutdown complete")
+
+# =============================================================================
+# STATS ENDPOINTS - Daily, Weekly, Period
+# =============================================================================
+
+@api_router.get("/stats/today")
+async def get_today_stats():
+    """Get statistics for today only"""
+    today = date.today().isoformat()
+
+    # Query today's entry
+    entry = await db.daily_entries.find_one({
+        "user_id": CURRENT_USER_ID,
+        "date": today
+    })
+
+    if not entry:
+        # Return zeros if no entry exists
+        user_goals = await get_user_goals(CURRENT_USER_ID)
+        return {
+            "date": today,
+            "calls": {"current": 0, "goal": user_goals.get("calls_daily", 0), "diff": -user_goals.get("calls_daily", 0), "status": "behind"},
+            "reservations": {"current": 0, "goal": user_goals.get("reservations_daily", 0), "diff": -user_goals.get("reservations_daily", 0), "status": "behind", "prepaid_count": 0, "refund_protection_count": 0},
+            "conversion_rate": {"current": 0, "goal": 0, "status": "on_track"},
+            "profit": {"current": 0, "goal": user_goals.get("profit_daily", 0), "diff": -user_goals.get("profit_daily", 0), "status": "behind"},
+            "spins": {"current": 0, "goal": user_goals.get("spins_daily", 0), "diff": -user_goals.get("spins_daily", 0), "status": "behind"},
+            "combined": {"current": 0, "goal": 0, "diff": 0, "status": "on_track"},
+            "avg_time": {"current": 0, "goal": user_goals.get("avg_time_per_booking", 0), "status": "on_track"},
+            "earnings": {
+                "usd": {"profit": 0, "spins": 0, "misc": 0, "total": 0},
+                "pesos": {"gross_pesos": 0, "service_fee": 0, "payday_deduction": 0, "net_pesos": 0},
+                "peso_rate": user_goals.get("peso_rate", 17.50)
+            }
+        }
+
+    # Calculate stats from entry
+    user_goals = await get_user_goals(CURRENT_USER_ID)
+    bookings = entry.get("bookings", [])
+    spins = entry.get("spins", [])
+    misc_income = entry.get("misc_income", [])
+    calls = entry.get("calls_received", 0)
+
+    total_bookings = len(bookings)
+    total_profit = sum(b.get("profit", 0) for b in bookings)
+    total_spins = sum(s.get("amount", 0) for s in spins)
+    total_misc = sum(m.get("amount", 0) for m in misc_income)
+    prepaid_count = sum(1 for b in bookings if b.get("is_prepaid", False))
+    refund_count = sum(1 for b in bookings if b.get("has_refund_protection", False))
+
+    times = [b.get("time_since_last", 0) for b in bookings if b.get("time_since_last", 0) > 0]
+    avg_time = sum(times) / len(times) if times else 0
+
+    conversion_rate = (total_bookings / calls * 100) if calls > 0 else 0
+    combined = total_profit + total_spins
+
+    # Calculate earnings with peso conversion
+    peso_rate = user_goals.get("peso_rate", 17.50)
+    gross_pesos = (total_profit + total_spins + total_misc) * peso_rate
+    service_fee = gross_pesos * 0.17
+    net_pesos = gross_pesos - service_fee
+
+    return {
+        "date": today,
+        "calls": {
+            "current": calls,
+            "goal": user_goals.get("calls_daily", 0),
+            "diff": calls - user_goals.get("calls_daily", 0),
+            "status": "ahead" if calls >= user_goals.get("calls_daily", 0) else "behind"
+        },
+        "reservations": {
+            "current": total_bookings,
+            "goal": user_goals.get("reservations_daily", 0),
+            "diff": total_bookings - user_goals.get("reservations_daily", 0),
+            "status": "ahead" if total_bookings >= user_goals.get("reservations_daily", 0) else "behind",
+            "prepaid_count": prepaid_count,
+            "refund_protection_count": refund_count
+        },
+        "conversion_rate": {
+            "current": round(conversion_rate, 2),
+            "goal": user_goals.get("conversion_rate_goal", 0),
+            "status": "ahead" if conversion_rate >= user_goals.get("conversion_rate_goal", 0) else "behind"
+        },
+        "profit": {
+            "current": round(total_profit, 2),
+            "goal": user_goals.get("profit_daily", 0),
+            "diff": round(total_profit - user_goals.get("profit_daily", 0), 2),
+            "status": "ahead" if total_profit >= user_goals.get("profit_daily", 0) else "behind"
+        },
+        "spins": {
+            "current": round(total_spins, 2),
+            "goal": user_goals.get("spins_daily", 0),
+            "diff": round(total_spins - user_goals.get("spins_daily", 0), 2),
+            "status": "ahead" if total_spins >= user_goals.get("spins_daily", 0) else "behind"
+        },
+        "combined": {
+            "current": round(combined, 2),
+            "goal": user_goals.get("combined_daily", 0),
+            "diff": round(combined - user_goals.get("combined_daily", 0), 2),
+            "status": "ahead" if combined >= user_goals.get("combined_daily", 0) else "behind"
+        },
+        "avg_time": {
+            "current": round(avg_time, 1),
+            "goal": user_goals.get("avg_time_per_booking", 0),
+            "status": "ahead" if avg_time <= user_goals.get("avg_time_per_booking", 0) or avg_time == 0 else "behind"
+        },
+        "earnings": {
+            "usd": {
+                "profit": round(total_profit, 2),
+                "spins": round(total_spins, 2),
+                "misc": round(total_misc, 2),
+                "total": round(total_profit + total_spins + total_misc, 2)
+            },
+            "pesos": {
+                "gross_pesos": round(gross_pesos, 2),
+                "service_fee": round(service_fee, 2),
+                "payday_deduction": 0,
+                "net_pesos": round(net_pesos, 2)
+            },
+            "peso_rate": peso_rate
+        }
+    }
+
+
+@api_router.get("/stats/week")
+async def get_week_stats():
+    """Get statistics for the past 7 days - Pro+ only"""
+    user = get_current_user_sync()
+    access = check_feature_access(user, "multiple_periods")
+
+    if not access["allowed"]:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": "Weekly statistics require Pro plan or higher",
+                "current_plan": user.plan,
+                "required_plan": "pro"
+            }
+        )
+
+    # Calculate date range for past 7 days
+    end_date = date.today()
+    start_date = end_date - timedelta(days=6)
+
+    entries = await db.daily_entries.find({
+        "user_id": CURRENT_USER_ID,
+        "date": {"$gte": start_date.isoformat(), "$lte": end_date.isoformat()}
+    }).to_list(1000)
+
+    # Aggregate statistics
+    user_goals = await get_user_goals(CURRENT_USER_ID)
+    total_calls = sum(e.get("calls_received", 0) for e in entries)
+    all_bookings = []
+    all_spins = []
+    all_misc = []
+
+    for e in entries:
+        all_bookings.extend(e.get("bookings", []))
+        all_spins.extend(e.get("spins", []))
+        all_misc.extend(e.get("misc_income", []))
+
+    total_bookings = len(all_bookings)
+    total_profit = sum(b.get("profit", 0) for b in all_bookings)
+    total_spins_amount = sum(s.get("amount", 0) for s in all_spins)
+    total_misc = sum(m.get("amount", 0) for m in all_misc)
+
+    peso_rate = user_goals.get("peso_rate", 17.50)
+    gross_pesos = (total_profit + total_spins_amount + total_misc) * peso_rate
+    service_fee = gross_pesos * 0.17
+    net_pesos = gross_pesos - service_fee
+
+    return {
+        "period": "week",
+        "start_date": start_date.isoformat(),
+        "end_date": end_date.isoformat(),
+        "days_tracked": len(entries),
+        "earnings": {
+            "usd": {
+                "profit": round(total_profit, 2),
+                "spins": round(total_spins_amount, 2),
+                "misc": round(total_misc, 2),
+                "total": round(total_profit + total_spins_amount + total_misc, 2)
+            },
+            "pesos": {
+                "gross_pesos": round(gross_pesos, 2),
+                "service_fee": round(service_fee, 2),
+                "payday_deduction": 0,
+                "net_pesos": round(net_pesos, 2)
+            },
+            "peso_rate": peso_rate
+        }
+    }
+
+
+@api_router.get("/stats/period")
+async def get_period_stats():
+    """Get statistics for current pay period - Pro+ only"""
+    user = get_current_user_sync()
+    access = check_feature_access(user, "multiple_periods")
+
+    if not access["allowed"]:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": "Period statistics require Pro plan or higher",
+                "current_plan": user.plan,
+                "required_plan": "pro"
+            }
+        )
+
+    start_date, end_date, period_id = get_current_period()
+
+    entries = await db.daily_entries.find({
+        "user_id": CURRENT_USER_ID,
+        "date": {"$gte": start_date, "$lte": end_date}
+    }).to_list(1000)
+
+    # Aggregate statistics
+    user_goals = await get_user_goals(CURRENT_USER_ID)
+    total_calls = sum(e.get("calls_received", 0) for e in entries)
+    all_bookings = []
+    all_spins = []
+    all_misc = []
+
+    for e in entries:
+        all_bookings.extend(e.get("bookings", []))
+        all_spins.extend(e.get("spins", []))
+        all_misc.extend(e.get("misc_income", []))
+
+    total_bookings = len(all_bookings)
+    total_profit = sum(b.get("profit", 0) for b in all_bookings)
+    total_spins_amount = sum(s.get("amount", 0) for s in all_spins)
+    total_misc = sum(m.get("amount", 0) for m in all_misc)
+
+    peso_rate = user_goals.get("peso_rate", 17.50)
+    gross_pesos = (total_profit + total_spins_amount + total_misc) * peso_rate
+    service_fee = gross_pesos * 0.17
+    net_pesos = gross_pesos - service_fee
+
+    return {
+        "period": "biweekly",
+        "period_id": period_id,
+        "start_date": start_date,
+        "end_date": end_date,
+        "days_tracked": len(entries),
+        "earnings": {
+            "usd": {
+                "profit": round(total_profit, 2),
+                "spins": round(total_spins_amount, 2),
+                "misc": round(total_misc, 2),
+                "total": round(total_profit + total_spins_amount + total_misc, 2)
+            },
+            "pesos": {
+                "gross_pesos": round(gross_pesos, 2),
+                "service_fee": round(service_fee, 2),
+                "payday_deduction": 0,
+                "net_pesos": round(net_pesos, 2)
+            },
+            "peso_rate": peso_rate
+        }
+    }
+
+
+# =============================================================================
+# SETTINGS ENDPOINTS
+# =============================================================================
+
+@api_router.get("/settings")
+async def get_settings():
+    """Get user settings"""
+    settings = await db.user_settings.find_one({"user_id": CURRENT_USER_ID})
+
+    if not settings:
+        # Return default settings
+        user_goals = await get_user_goals(CURRENT_USER_ID)
+        return {
+            "user_id": CURRENT_USER_ID,
+            "user_plan": CURRENT_USER_PLAN,
+            "peso_rate": user_goals.get("peso_rate", 17.50),
+            "goals": user_goals
+        }
+
+    return {
+        "user_id": CURRENT_USER_ID,
+        "user_plan": settings.get("user_plan", CURRENT_USER_PLAN),
+        "peso_rate": settings.get("peso_rate", 17.50),
+        "goals": settings.get("goals", await get_user_goals(CURRENT_USER_ID))
+    }
+
+
+@api_router.put("/settings")
+async def update_settings(settings_update: dict):
+    """Update user settings"""
+    # Get existing settings
+    existing = await db.user_settings.find_one({"user_id": CURRENT_USER_ID})
+
+    if not existing:
+        existing = {
+            "user_id": CURRENT_USER_ID,
+            "user_plan": CURRENT_USER_PLAN,
+            "peso_rate": 17.50,
+            "goals": await get_user_goals(CURRENT_USER_ID)
+        }
+
+    # Merge settings
+    merged = {**existing, **settings_update}
+    merged["updated_at"] = datetime.utcnow()
+
+    # Save to database
+    await db.user_settings.update_one(
+        {"user_id": CURRENT_USER_ID},
+        {"$set": merged},
+        upsert=True
+    )
+
+    # Update user goals if provided
+    if "goals" in settings_update:
+        await update_user_goals(CURRENT_USER_ID, settings_update["goals"])
+
+    # Update global user plan if changed
+    if "user_plan" in settings_update:
+        global CURRENT_USER_PLAN
+        CURRENT_USER_PLAN = settings_update["user_plan"]
+
+    return merged
+
+
+# =============================================================================
+# ENTRY MANAGEMENT ENDPOINTS
+# =============================================================================
+
+@api_router.get("/entries/today")
+async def get_today_entry():
+    """Get today's daily entry"""
+    today = date.today().isoformat()
+    _, _, period_id = get_current_period()
+
+    entry = await db.daily_entries.find_one({
+        "user_id": CURRENT_USER_ID,
+        "date": today
+    })
+
+    if not entry:
+        # Create new entry with zero values
+        entry = {
+            "id": str(uuid.uuid4()),
+            "user_id": CURRENT_USER_ID,
+            "date": today,
+            "period_id": period_id,
+            "calls_received": 0,
+            "bookings": [],
+            "spins": [],
+            "misc_income": [],
+            "work_timer_start": None,
+            "created_at": datetime.utcnow(),
+            "updated_at": datetime.utcnow()
+        }
+        await db.daily_entries.insert_one(entry)
+
+    return entry
+
+
+@api_router.put("/entries/{date}/calls")
+async def update_calls(date: str, calls_received: int):
+    """Update calls received for a date"""
+    # Validate date format
+    try:
+        date_obj = datetime.fromisoformat(date)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+
+    _, _, period_id = get_current_period()
+
+    # Update or create entry
+    result = await db.daily_entries.update_one(
+        {"user_id": CURRENT_USER_ID, "date": date},
+        {
+            "$set": {
+                "calls_received": calls_received,
+                "updated_at": datetime.utcnow()
+            },
+            "$setOnInsert": {
+                "id": str(uuid.uuid4()),
+                "user_id": CURRENT_USER_ID,
+                "date": date,
+                "period_id": period_id,
+                "bookings": [],
+                "spins": [],
+                "misc_income": [],
+                "created_at": datetime.utcnow()
+            }
+        },
+        upsert=True
+    )
+
+    # Return updated entry
+    entry = await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
+    return entry
+
+
+# =============================================================================
+# TIMER ENDPOINTS
+# =============================================================================
+
+@api_router.post("/entries/{date}/timer/start")
+async def start_timer(date: str):
+    """Start work timer"""
+    try:
+        date_obj = datetime.fromisoformat(date)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+
+    entry = await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
+
+    if entry and entry.get("work_timer_start"):
+        raise HTTPException(status_code=400, detail="Timer already running")
+
+    _, _, period_id = get_current_period()
+
+    # Update or create entry with timer start
+    await db.daily_entries.update_one(
+        {"user_id": CURRENT_USER_ID, "date": date},
+        {
+            "$set": {
+                "work_timer_start": datetime.utcnow().isoformat(),
+                "updated_at": datetime.utcnow()
+            },
+            "$setOnInsert": {
+                "id": str(uuid.uuid4()),
+                "user_id": CURRENT_USER_ID,
+                "date": date,
+                "period_id": period_id,
+                "calls_received": 0,
+                "bookings": [],
+                "spins": [],
+                "misc_income": [],
+                "created_at": datetime.utcnow()
+            }
+        },
+        upsert=True
+    )
+
+    entry = await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
+    return entry
+
+
+@api_router.post("/entries/{date}/timer/stop")
+async def stop_timer(date: str):
+    """Stop work timer"""
+    try:
+        date_obj = datetime.fromisoformat(date)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+
+    entry = await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
+
+    if not entry or not entry.get("work_timer_start"):
+        raise HTTPException(status_code=400, detail="No timer running")
+
+    # Calculate elapsed time
+    timer_start = datetime.fromisoformat(entry["work_timer_start"])
+    elapsed_minutes = (datetime.utcnow() - timer_start).total_seconds() / 60
+
+    # Update entry
+    await db.daily_entries.update_one(
+        {"user_id": CURRENT_USER_ID, "date": date},
+        {
+            "$set": {
+                "work_timer_start": None,
+                "updated_at": datetime.utcnow()
+            },
+            "$inc": {
+                "total_time_minutes": elapsed_minutes
+            }
+        }
+    )
+
+    entry = await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
+    return entry
+
+
+# =============================================================================
+# BOOKING/SPIN/MISC INCOME ENDPOINTS
+# =============================================================================
+
+@api_router.post("/entries/{date}/bookings")
+async def add_booking(date: str, booking: BookingCreate):
+    """Add a booking"""
+    try:
+        date_obj = datetime.fromisoformat(date)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+
+    _, _, period_id = get_current_period()
+
+    # Create booking with ID
+    booking_dict = booking.dict()
+    booking_dict["id"] = str(uuid.uuid4())
+    booking_dict["timestamp"] = datetime.utcnow()
+
+    # Update or create entry
+    await db.daily_entries.update_one(
+        {"user_id": CURRENT_USER_ID, "date": date},
+        {
+            "$push": {"bookings": booking_dict},
+            "$set": {"updated_at": datetime.utcnow()},
+            "$setOnInsert": {
+                "id": str(uuid.uuid4()),
+                "user_id": CURRENT_USER_ID,
+                "date": date,
+                "period_id": period_id,
+                "calls_received": 0,
+                "spins": [],
+                "misc_income": [],
+                "created_at": datetime.utcnow()
+            }
+        },
+        upsert=True
+    )
+
+    entry = await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
+    return entry
+
+
+@api_router.post("/entries/{date}/spins")
+async def add_spin(date: str, spin: SpinCreate):
+    """Add a spin"""
+    try:
+        date_obj = datetime.fromisoformat(date)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+
+    _, _, period_id = get_current_period()
+
+    # Create spin with ID
+    spin_dict = spin.dict()
+    spin_dict["id"] = str(uuid.uuid4())
+    spin_dict["timestamp"] = datetime.utcnow()
+
+    # Update or create entry
+    await db.daily_entries.update_one(
+        {"user_id": CURRENT_USER_ID, "date": date},
+        {
+            "$push": {"spins": spin_dict},
+            "$set": {"updated_at": datetime.utcnow()},
+            "$setOnInsert": {
+                "id": str(uuid.uuid4()),
+                "user_id": CURRENT_USER_ID,
+                "date": date,
+                "period_id": period_id,
+                "calls_received": 0,
+                "bookings": [],
+                "misc_income": [],
+                "created_at": datetime.utcnow()
+            }
+        },
+        upsert=True
+    )
+
+    entry = await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
+    return entry
+
+
+@api_router.post("/entries/{date}/misc")
+async def add_misc_income(date: str, misc: MiscIncomeCreate):
+    """Add miscellaneous income"""
+    try:
+        date_obj = datetime.fromisoformat(date)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+
+    _, _, period_id = get_current_period()
+
+    # Create misc income with ID
+    misc_dict = misc.dict()
+    misc_dict["id"] = str(uuid.uuid4())
+    misc_dict["timestamp"] = datetime.utcnow()
+
+    # Update or create entry
+    await db.daily_entries.update_one(
+        {"user_id": CURRENT_USER_ID, "date": date},
+        {
+            "$push": {"misc_income": misc_dict},
+            "$set": {"updated_at": datetime.utcnow()},
+            "$setOnInsert": {
+                "id": str(uuid.uuid4()),
+                "user_id": CURRENT_USER_ID,
+                "date": date,
+                "period_id": period_id,
+                "calls_received": 0,
+                "bookings": [],
+                "spins": [],
+                "created_at": datetime.utcnow()
+            }
+        },
+        upsert=True
+    )
+
+    entry = await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
+    return entry
+
+
+@api_router.delete("/entries/{date}/bookings/{booking_id}")
+async def delete_booking(date: str, booking_id: str):
+    """Delete a booking"""
+    try:
+        date_obj = datetime.fromisoformat(date)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+
+    entry = await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
+
+    if not entry:
+        raise HTTPException(status_code=404, detail="Entry not found")
+
+    # Check if booking exists
+    bookings = entry.get("bookings", [])
+    if not any(b.get("id") == booking_id for b in bookings):
+        raise HTTPException(status_code=404, detail="Booking not found")
+
+    # Remove booking
+    await db.daily_entries.update_one(
+        {"user_id": CURRENT_USER_ID, "date": date},
+        {
+            "$pull": {"bookings": {"id": booking_id}},
+            "$set": {"updated_at": datetime.utcnow()}
+        }
+    )
+
+    entry = await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
+    return entry
+
+
+# =============================================================================
+# EXPORT ENDPOINT
+# =============================================================================
+
+@api_router.get("/export/csv")
+async def export_csv():
+    """Export data as CSV - Pro+ only"""
+    user = get_current_user_sync()
+    access = check_feature_access(user, "export_data")
+
+    if not access["allowed"]:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": "CSV export requires Individual plan or higher",
+                "current_plan": user.plan,
+                "required_plan": "individual"
+            }
+        )
+
+    # Query all entries
+    entries = await db.daily_entries.find({"user_id": CURRENT_USER_ID}).sort("date", 1).to_list(10000)
+
+    # Generate CSV
+    import io
+    import csv
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    # Write header
+    writer.writerow(["Date", "Calls", "Bookings", "Conversion Rate", "Profit", "Spins", "Misc Income", "Total Time (min)"])
+
+    # Write data
+    for entry in entries:
+        bookings = entry.get("bookings", [])
+        spins = entry.get("spins", [])
+        misc_income = entry.get("misc_income", [])
+        calls = entry.get("calls_received", 0)
+
+        total_bookings = len(bookings)
+        total_profit = sum(b.get("profit", 0) for b in bookings)
+        total_spins = sum(s.get("amount", 0) for s in spins)
+        total_misc = sum(m.get("amount", 0) for m in misc_income)
+        conversion_rate = (total_bookings / calls * 100) if calls > 0 else 0
+        total_time = entry.get("total_time_minutes", 0)
+
+        writer.writerow([
+            entry.get("date"),
+            calls,
+            total_bookings,
+            f"{conversion_rate:.2f}%",
+            f"${total_profit:.2f}",
+            f"${total_spins:.2f}",
+            f"${total_misc:.2f}",
+            f"{total_time:.1f}"
+        ])
+
+    # Return CSV
+    from fastapi.responses import Response
+    csv_content = output.getvalue()
+    today_str = date.today().isoformat()
+
+    return Response(
+        content=csv_content,
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": f"attachment; filename=kpi_export_{today_str}.csv"
+        }
+    )
+
