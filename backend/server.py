@@ -61,7 +61,7 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 
 CURRENT_USER_ID = "user_001"
-CURRENT_USER_PLAN = "individual"  # trial, individual, pro, or group
+CURRENT_USER_PLAN = "individual"  # Testing Individual plan for 2-3 weeks before rolling out other tiers
 
 # =============================================================================
 # FEATURE REGISTRY
