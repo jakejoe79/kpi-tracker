@@ -257,6 +257,9 @@ function App() {
   const [callsInput, setCallsInput] = useState('');
   const [pesoRateInput, setPesoRateInput] = useState('');
   
+  // Edit booking state
+  const [editingBooking, setEditingBooking] = useState(null);
+  
   const today = new Date().toISOString().split('T')[0];
   const isPro = settings?.user_plan === 'pro';
   const isIndividualOrHigher = settings?.user_plan && ['individual', 'pro', 'group'].includes(settings.user_plan);
@@ -451,6 +454,38 @@ function App() {
       toast.error('Failed to delete booking');
     }
   };
+
+  const startEditBooking = (booking) => {
+    setEditingBooking(booking);
+    setBookingProfit(String(booking.profit));
+    setIsPrepaid(booking.is_prepaid);
+    setHasRefundProtection(booking.has_refund_protection);
+    setTimeSinceLast(String(booking.time_since_last || ''));
+    setModal('edit-booking');
+  };
+
+  const updateBooking = async () => {
+    if (!bookingProfit || !editingBooking) return;
+    try {
+      await axios.put(`${API}/entries/${today}/bookings/${editingBooking.id}`, {
+        profit: parseFloat(bookingProfit),
+        is_prepaid: isPrepaid,
+        has_refund_protection: hasRefundProtection,
+        time_since_last: parseInt(timeSinceLast) || 0,
+      });
+      toast.success('Booking updated!');
+      setBookingProfit('');
+      setIsPrepaid(false);
+      setHasRefundProtection(false);
+      setTimeSinceLast('');
+      setEditingBooking(null);
+      setModal(null);
+      fetchData();
+    } catch (error) {
+      toast.error('Failed to update booking');
+    }
+  };
+
   
   if (loading) {
     return (
@@ -754,12 +789,20 @@ function App() {
                       )}
                     </div>
                   </div>
-                  <button
-                    onClick={() => deleteBooking(booking.id)}
-                    className="p-2 hover:bg-red-500/20 rounded-lg"
-                  >
-                    <Trash2 size={16} className="text-red-500" />
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => startEditBooking(booking)}
+                      className="p-2 hover:bg-blue-500/20 rounded-lg"
+                    >
+                      <Settings size={16} className="text-blue-400" />
+                    </button>
+                    <button
+                      onClick={() => deleteBooking(booking.id)}
+                      className="p-2 hover:bg-red-500/20 rounded-lg"
+                    >
+                      <Trash2 size={16} className="text-red-500" />
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -798,6 +841,33 @@ function App() {
           data-testid="submit-booking-btn"
         >
           Add Booking
+        </button>
+      </Modal>
+
+      {/* Edit Booking Modal */}
+      <Modal isOpen={modal === 'edit-booking'} onClose={() => { setModal(null); setEditingBooking(null); }} title="Edit Booking">
+        <Input
+          label="Profit Amount ($)"
+          type="number"
+          step="0.01"
+          placeholder="0.00"
+          value={bookingProfit}
+          onChange={(e) => setBookingProfit(e.target.value)}
+        />
+        <Input
+          label="Time Since Last Booking (min)"
+          type="number"
+          placeholder="30"
+          value={timeSinceLast}
+          onChange={(e) => setTimeSinceLast(e.target.value)}
+        />
+        <Toggle label="Prepaid (counts toward spin)" checked={isPrepaid} onChange={setIsPrepaid} />
+        <Toggle label="Refund Protection" checked={hasRefundProtection} onChange={setHasRefundProtection} />
+        <button
+          onClick={updateBooking}
+          className="w-full bg-blue-500 hover:bg-blue-600 text-white py-3 rounded-xl font-semibold"
+        >
+          Update Booking
         </button>
       </Modal>
       

@@ -1985,6 +1985,38 @@ async def delete_booking(date: str, booking_id: str):
     await db.daily_entries.update_one({"user_id": CURRENT_USER_ID, "date": date}, {"$pull": {"bookings": {"id": booking_id}}, "$set": {"updated_at": datetime.utcnow()}})
     return await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
 
+@api_router.put("/entries/{date}/bookings/{booking_id}")
+async def update_booking(date: str, booking_id: str, booking_update: BookingCreate):
+    """Update a booking"""
+    try:
+        datetime.fromisoformat(date)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+
+    entry = await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
+    if not entry:
+        raise HTTPException(status_code=404, detail="Entry not found")
+
+    bookings = entry.get("bookings", [])
+    booking_index = next((i for i, b in enumerate(bookings) if b.get("id") == booking_id), None)
+
+    if booking_index is None:
+        raise HTTPException(status_code=404, detail="Booking not found")
+
+    # Update the booking while preserving id and timestamp
+    updated_booking = booking_update.dict()
+    updated_booking["id"] = bookings[booking_index]["id"]
+    updated_booking["timestamp"] = bookings[booking_index].get("timestamp", datetime.utcnow())
+    bookings[booking_index] = updated_booking
+
+    await db.daily_entries.update_one(
+        {"user_id": CURRENT_USER_ID, "date": date},
+        {"$set": {"bookings": bookings, "updated_at": datetime.utcnow()}}
+    )
+
+    return await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
+
+
 
 @api_router.get("/export/csv")
 async def export_csv():
