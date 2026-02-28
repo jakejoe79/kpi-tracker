@@ -1338,7 +1338,7 @@ async def root():
 # AUTHENTICATION ENDPOINTS
 # =============================================================================
 
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
