@@ -125,11 +125,6 @@ if not mongo_url:
 client = AsyncIOMotorClient(mongo_url)
 db = client[db_name]
 
-# Inject db into services to avoid circular imports
-from . import services
-services.tokens.db = db
-services.auth.db = db
-
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
 

@@ -44,9 +44,8 @@ async def revoke_all_user_tokens(user_id: str, reason: str = "manual") -> int:
     
     Returns: Number of tokens revoked
     """
-    global db
     if db is None:
-        from ..server import db
+        raise RuntimeError("db not initialized - call init_db() first")
     
     from .tokens import revoke_user_tokens
     
