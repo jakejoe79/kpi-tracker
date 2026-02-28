@@ -44,7 +44,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 import statistics
 
-from .constants import SPIN_RULES, calculate_progress, is_on_track, get_status
+from constants import SPIN_RULES, calculate_progress, is_on_track, get_status
 
 
 ROOT_DIR = Path(__file__).parent
