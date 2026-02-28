@@ -6,7 +6,7 @@ ELITE FEATURES:
 - Elite Risk Scoring: (gap * 0.7) + (conversion_drop * 0.3) with trend multipliers
 - Smart Thresholds: Minimum change detection to prevent noise
 - Alert Cooldowns: 1hr high risk, 2hr medium, 4hr low - prevents toxic anxiety
-- Risk Tiers: 🔴 Red (70+), 🟡 Yellow (40-69), 🟢 Green (<40)
+- Risk Tiers: ≡ƒö┤ Red (70+), ≡ƒƒí Yellow (40-69), ≡ƒƒó Green (<40)
 - Top 5 Signals: Sorted by risk_score descending - highest operational priority
 - Decision Signals: Answers "Who needs attention right now?" not "What changed by 0.3%?"
 
@@ -393,8 +393,8 @@ class TeamForecast(BaseModel):
     days_elapsed: int
     days_remaining: int
     confidence: str
-    trend_direction: str = "→"  # Team velocity trend: ↑ ↓ →
-    risk_indicator: str = "🟢"  # 🔴 🟡 🟢 based on percent_of_goal
+    trend_direction: str = "ΓåÆ"  # Team velocity trend: Γåæ Γåô ΓåÆ
+    risk_indicator: str = "≡ƒƒó"  # ≡ƒö┤ ≡ƒƒí ≡ƒƒó based on percent_of_goal
     rep_forecasts: List[RepForecast]
 
 class InterventionSignal(BaseModel):
@@ -403,12 +403,12 @@ class InterventionSignal(BaseModel):
     signal_type: str
     risk_score: float
     risk_level: str
-    risk_tier: str = "🟢 Low Risk"
+    risk_tier: str = "≡ƒƒó Low Risk"
     projected_reservations: float
     projected_percent_of_goal: float = 0.0
     gap: float
     trend: str
-    trend_direction: str = "→"  # ↑, ↓, or →
+    trend_direction: str = "ΓåÆ"  # Γåæ, Γåô, or ΓåÆ
     confidence_level: str = "medium"
     action_required: str
     can_alert: bool = True
@@ -575,23 +575,23 @@ async def calculate_top_signals_live(user_id: str, limit: int = 5) -> tuple:
         projected_percent = (rep.projected_reservations / goal * 100) if goal > 0 else 0
         
         # Extract trend direction from trend string
-        trend_direction = "→"
-        if "↑" in rep.trend:
-            trend_direction = "↑"
-        elif "↓" in rep.trend:
-            trend_direction = "↓"
+        trend_direction = "ΓåÆ"
+        if "Γåæ" in rep.trend:
+            trend_direction = "Γåæ"
+        elif "Γåô" in rep.trend:
+            trend_direction = "Γåô"
         
         # Smart action recommendations based on risk level and cooldown
         can_alert = await AlertCooldownManager.can_send_alert(rep.user_id, signal_type, rep.risk_level)
         
         if rep.risk_level == "high":
-            action = "🚨 Immediate coaching required" if can_alert else "⏳ Alert on cooldown - coaching needed"
+            action = "≡ƒÜ¿ Immediate coaching required" if can_alert else "ΓÅ│ Alert on cooldown - coaching needed"
         elif rep.risk_level == "medium":
-            action = "⚠️ Schedule check-in this week" if can_alert else "⏳ Alert on cooldown - monitor closely"
+            action = "ΓÜá∩╕Å Schedule check-in this week" if can_alert else "ΓÅ│ Alert on cooldown - monitor closely"
         elif rep.gap >= 0:
-            action = "✅ On track - maintain momentum"
+            action = "Γ£à On track - maintain momentum"
         else:
-            action = "⭐ Star performer - recognize achievement"
+            action = "Γ¡É Star performer - recognize achievement"
         
         signal_dict = {
             "user_id": rep.user_id,
@@ -839,10 +839,10 @@ def get_risk_tier_label(risk_score: float) -> str:
     """Get human-readable risk tier label"""
     tier = get_risk_tier(risk_score)
     if tier == "red":
-        return "🔴 High Risk"
+        return "≡ƒö┤ High Risk"
     elif tier == "yellow":
-        return "🟡 Medium Risk"
-    return "🟢 Low Risk"
+        return "≡ƒƒí Medium Risk"
+    return "≡ƒƒó Low Risk"
 
 # =============================================================================
 # FORECASTING ENGINE - Elite Risk Scoring
@@ -866,7 +866,7 @@ def calculate_risk_score(projected: float, goal: float, trend_direction: str, co
     conversion_penalty = conversion_drop * 50  # Scale conversion drop impact
     
     # Trend multiplier
-    trend_multiplier = 1.3 if trend_direction == "↓ declining" else 0.7 if trend_direction == "↑ improving" else 1.0
+    trend_multiplier = 1.3 if trend_direction == "Γåô declining" else 0.7 if trend_direction == "Γåæ improving" else 1.0
     
     # Combined risk score
     base_risk = (gap_score * 0.7) + (conversion_penalty * 0.3)  # 70% gap, 30% conversion
@@ -890,14 +890,14 @@ def calculate_trend(recent_entries: List[Dict], older_entries: List[Dict]) -> st
     older_avg = older_bookings / older_days
     
     if older_avg == 0:
-        return "→ stable" if recent_avg == 0 else "↑ improving"
+        return "ΓåÆ stable" if recent_avg == 0 else "Γåæ improving"
     
     change_ratio = recent_avg / older_avg
     if change_ratio > 1.1:
-        return "↑ improving"
+        return "Γåæ improving"
     elif change_ratio < 0.9:
-        return "↓ declining"
-    return "→ stable"
+        return "Γåô declining"
+    return "ΓåÆ stable"
 
 def calculate_conversion_drop(entries: List[Dict]) -> float:
     """Calculate conversion rate drop from first half to second half of period"""
@@ -1647,7 +1647,7 @@ async def get_team_forecast():
         }).sort("date", -1).to_list(1000)
         all_entries.extend(entries)
     
-    team_trend_direction = "→"
+    team_trend_direction = "ΓåÆ"
     if len(all_entries) >= 6:
         recent_3 = all_entries[:3]
         older_3 = all_entries[3:6]
@@ -1657,17 +1657,17 @@ async def get_team_forecast():
         if older_bookings > 0:
             change_ratio = recent_bookings / older_bookings
             if change_ratio > 1.1:
-                team_trend_direction = "↑"
+                team_trend_direction = "Γåæ"
             elif change_ratio < 0.9:
-                team_trend_direction = "↓"
+                team_trend_direction = "Γåô"
     
     # Calculate team risk indicator based on percent_of_goal
     if percent_of_goal >= 90:
-        team_risk_indicator = "🟢"  # On track
+        team_risk_indicator = "≡ƒƒó"  # On track
     elif percent_of_goal >= 70:
-        team_risk_indicator = "🟡"  # At risk
+        team_risk_indicator = "≡ƒƒí"  # At risk
     else:
-        team_risk_indicator = "🔴"  # High risk
+        team_risk_indicator = "≡ƒö┤"  # High risk
     
     return TeamForecast(
         team_projected_reservations=round(team_projected, 1),
@@ -2370,39 +2370,39 @@ async def startup_event():
     
     # 0. Load JWT keys for rotation support
     load_jwt_keys()
-    logger.info("✓ JWT keys loaded with rotation support")
+    logger.info("Γ£ô JWT keys loaded with rotation support")
     
     # 1. Database connectivity
     await verify_database_connection(db)
-    logger.info("✓ Database connection verified")
+    logger.info("Γ£ô Database connection verified")
     
     # 2. Initialize collections with schemas (creates if missing, updates if exists)
     await initialize_database_schema(db)
-    logger.info("✓ Database schema initialized")
+    logger.info("Γ£ô Database schema initialized")
     
     # 3. Create unique indexes (structural constraints)
     # (Already done in initialize_database_schema)
-    logger.info("✓ Unique indexes created")
+    logger.info("Γ£ô Unique indexes created")
     
     # 4. Verify schemas are actually enforced
     await verify_schema_enforcement(db)
-    logger.info("✓ Schema enforcement verified")
+    logger.info("Γ£ô Schema enforcement verified")
     
     # 5. Verify unique indexes exist
     await verify_unique_indexes(db)
-    logger.info("✓ Unique indexes verified")
+    logger.info("Γ£ô Unique indexes verified")
     
     # 6. Verify enum/hierarchy completeness
     await validate_auth_system_integrity(db)
-    logger.info("✓ Auth system integrity verified")
+    logger.info("Γ£ô Auth system integrity verified")
     
     # 7. Test tenant integrity enforcement
     await verify_tenant_validation_works(db)
-    logger.info("✓ Tenant validation verified")
+    logger.info("Γ£ô Tenant validation verified")
     
     # 8. Verify audit log immutability
     await verify_audit_immutability(db)
-    logger.info("✓ Audit immutability verified")
+    logger.info("Γ£ô Audit immutability verified")
     
     start_scheduler()
     logger.info("=" * 50)
