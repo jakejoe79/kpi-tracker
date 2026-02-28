@@ -95,35 +95,6 @@ def get_users_validator() -> Dict[str, Any]:
         },
         "$expr": {
             "$and": [
-                # If team_id exists, user must have company_id (teams belong to companies)
-                {
-                    "$or": [
-                        {"$eq": ["$team_id", None]},
-                        {"$ne": ["$company_id", None]}
-                    ]
-                },
-                # If tier=individual, no team_id or company_id allowed
-                {
-                    "$or": [
-                        {"$ne": ["$tier", "individual"]},
-                        {
-                            "$and": [
-                                {"$eq": ["$team_id", None]},
-                                {"$eq": ["$company_id", None]}
-                            ]
-                        }
-                    ]
-                },
-                # updated_at >= created_at
-                {"$gte": ["$updated_at", "$created_at"]}
-            ]
-        }
-    }
-                }
-            ]
-        },
-        "$expr": {
-            "$and": [
                 # Safe: updated_at can be null on insert
                 {
                     "$or": [

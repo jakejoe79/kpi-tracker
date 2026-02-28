@@ -1363,9 +1363,9 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
     Get current user from JWT access token
     Used as dependency for protected routes
     """
-    from services.tokens import validate_access_token
+    from backend.services.tokens import decode_access_token
     
-    payload = await validate_access_token(token)
+    payload = decode_access_token(token)
     user_id = payload.get("sub")
     
     if not user_id:
@@ -1375,7 +1375,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
             headers={"WWW-Authenticate": "Bearer"}
         )
     
-    user = await db.users.find_one({"id": user_id})
+    user = await db.users.find_one({"id": user_id}, {"password_hash": 0})
     if not user:
         raise HTTPException(
             status_code=401,
@@ -1506,7 +1506,7 @@ async def refresh_token(refresh_token: str, jti: str, request: Request):
     Refresh access token using refresh token with CSRF protection
     """
     import os
-    from services.tokens import rotate_refresh_token
+    from backend.services.tokens import rotate_refresh_token
     
     # SameSite=strict prevents cross-site requests entirely
     # Additional: Verify Origin/Referer headers match expected host
@@ -1542,13 +1542,7 @@ async def logout(jti: str):
 
 @api_router.get("/health")
 async def health():
-    start, end, period_id = get_current_period()
-    return {
-        "status": "healthy",
-        "env": os.environ.get("ENV", "development"),
-        "plan_mode": CURRENT_USER_PLAN,
-        "current_period": period_id,
-    }
+    return {"status": "ok", "hardening": "complete"}
 
 @api_router.get("/user", response_model=User)
 async def get_user():
