@@ -1,1 +1,3 @@
-# Database package
+"""
+Database package - data access layer
+"""

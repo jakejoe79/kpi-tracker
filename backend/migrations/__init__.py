@@ -1,1 +1,3 @@
-# Migrations package
+"""
+Migrations package - database schema migrations
+"""
