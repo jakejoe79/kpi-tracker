@@ -4,8 +4,8 @@ services:
     name: kpi-tracker-backend
     runtime: python
     plan: free
-    root: backend
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: uvicorn server:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
