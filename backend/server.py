@@ -1342,8 +1342,8 @@ from fastapi.security import OAuth2PasswordBearer
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
-from services.auth import verify_password, normalize_and_validate_email
-from services.tokens import create_tokens
+from .services.auth import verify_password, normalize_and_validate_email
+from .services.tokens import create_tokens
 
 
 class TokenResponse(BaseModel):
@@ -1425,7 +1425,7 @@ async def register(user_data: UserCreate):
     """
     Register a new user and return tokens
     """
-    from services.users import create_user
+    from .services.users import create_user
     
     # Create user
     user = await create_user(
@@ -1449,7 +1449,7 @@ async def update_current_user(
     Update current user's profile
     Protected route - requires valid JWT token
     """
-    from services.users import update_user
+    from .services.users import update_user
     
     updates = {k: v for k, v in user_update.dict().items() if v is not None}
     
@@ -1470,7 +1470,7 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), request: Reque
     Uses OAuth2PasswordRequestForm for standard compatibility
     """
     import os
-    from services.tokens import create_tokens
+    from .services.tokens import create_tokens
     
     # Normalize and validate email
     email = normalize_and_validate_email(form_data.username)
@@ -1534,7 +1534,7 @@ async def logout(jti: str):
     """
     Logout - revoke refresh token
     """
-    from services.tokens import revoke_token
+    from .services.tokens import revoke_token
     
     revoked = await revoke_token(jti)
     return {"revoked": revoked}
