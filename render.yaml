@@ -4,8 +4,8 @@ services:
     name: kpi-tracker-backend
     runtime: python
     plan: free
-    buildCommand: pip install -r backend/requirements.txt
-    startCommand: cd backend && uvicorn server:app --host 0.0.0.0 --port $PORT
+    buildCommand: pip install -r src/backend/requirements.txt
+    startCommand: cd src/backend && uvicorn server:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
@@ -22,8 +22,8 @@ services:
     name: kpi-tracker-frontend
     runtime: static
     plan: free
-    buildCommand: cd frontend && yarn install && yarn build
-    staticPublishPath: ./frontend/build
+    buildCommand: cd kpi-tracker/frontend && yarn install && yarn build
+    staticPublishPath: ./kpi-tracker/frontend/build
     envVars:
       - key: NODE_VERSION
         value: 18.17.0
