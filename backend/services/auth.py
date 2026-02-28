@@ -2,11 +2,28 @@
 Authentication utilities - password hashing and verification
 """
 import bcrypt
+import re
 from fastapi import HTTPException, status
 from datetime import datetime, timezone
 
 # db will be injected at runtime to avoid circular imports
 db = None
+
+
+def normalize_and_validate_email(email: str) -> str:
+    """Normalize and validate an email address."""
+    if not email or not isinstance(email, str):
+        raise ValueError("Email must be a non-empty string")
+    
+    # Normalize: lowercase and strip whitespace
+    email = email.lower().strip()
+    
+    # Basic validation regex
+    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    if not re.match(pattern, email):
+        raise ValueError(f"Invalid email format: {email}")
+    
+    return email
 
 
 def hash_password(password: str) -> str:
