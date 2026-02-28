@@ -32,13 +32,12 @@ from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
 from pathlib import Path
-from pydantic import BaseModel, Field, EmailStr, validator
+from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 import uuid
 from datetime import datetime, date, timedelta
 import calendar
 import asyncio
-from email_validator import validate_email, EmailNotValidError
 from contextlib import asynccontextmanager
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -188,20 +187,6 @@ def get_previous_period() -> tuple:
 def is_period_boundary() -> bool:
     return date.today().day in [1, 15]
 
-
-def normalize_and_validate_email(email: str) -> str:
-    """
-    Validate and normalize email using email-validator library
-    Returns lowercase normalized email
-    Raises ValueError if invalid
-    """
-    try:
-        validated = validate_email(email.strip(), check_deliverability=False)
-        return validated.email.lower()
-    except EmailNotValidError as e:
-        raise ValueError(f"Invalid email format: {str(e)}")
-
-
 # =============================================================================
 # PYDANTIC MODELS
 # =============================================================================
@@ -210,18 +195,7 @@ class User(BaseModel):
     id: str
     email: str
     plan: str = "free"
-    password_hash: str = ""
-    company_id: str = ""
-    team_id: str = ""
     created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
-    
-    @validator("email", pre=True, always=True)
-    def validate_email_field(cls, v):
-        """Validate email format and normalize to lowercase"""
-        if not v:
-            raise ValueError("Email is required")
-        return normalize_and_validate_email(v)
 
 HARDCODED_USER = User(id=CURRENT_USER_ID, email="user@example.com", plan=CURRENT_USER_PLAN)
 
@@ -1333,213 +1307,6 @@ async def migrate_legacy_entries() -> dict:
 async def root():
     return {"message": "KPI Tracker API", "version": "2.2"}
 
-
-# =============================================================================
-# AUTHENTICATION ENDPOINTS
-# =============================================================================
-
-from fastapi.security import OAuth2PasswordBearer
-
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
-
-from services.auth import verify_password, normalize_and_validate_email
-from services.tokens import create_tokens
-
-
-class TokenResponse(BaseModel):
-    access: str
-    refresh: str
-    jti: str
-    token_type: str = "bearer"
-
-
-async def get_user_by_email(email: str) -> Optional[dict]:
-    """Get user by email (used by auth services)"""
-    return await db.users.find_one({"email": email})
-
-
-async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
-    """
-    Get current user from JWT access token
-    Used as dependency for protected routes
-    """
-    from services.tokens import validate_access_token
-    
-    payload = await validate_access_token(token)
-    user_id = payload.get("sub")
-    
-    if not user_id:
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid token payload",
-            headers={"WWW-Authenticate": "Bearer"}
-        )
-    
-    user = await db.users.find_one({"id": user_id})
-    if not user:
-        raise HTTPException(
-            status_code=401,
-            detail="User not found",
-            headers={"WWW-Authenticate": "Bearer"}
-        )
-    
-    return user
-
-
-async def get_current_active_user(current_user: dict = Depends(get_current_user)) -> dict:
-    """
-    Get current active user (checks for revoked tokens)
-    """
-    # Check if user's tokens have been revoked
-    revoked_count = await db.refresh_tokens.count_documents({
-        "user_id": current_user["id"],
-        "revoked": True
-    })
-    
-    if revoked_count > 0:
-        raise HTTPException(
-            status_code=401,
-            detail="Token revoked - please login again",
-            headers={"WWW-Authenticate": "Bearer"}
-        )
-    
-    return current_user
-
-
-class UserCreate(BaseModel):
-    email: str
-    password: str
-    plan: str = "free"
-    company_id: str = ""
-    team_id: str = ""
-
-
-class UserUpdate(BaseModel):
-    plan: str = None
-    company_id: str = None
-    team_id: str = None
-
-
-@api_router.post("/register", response_model=TokenResponse)
-async def register(user_data: UserCreate):
-    """
-    Register a new user and return tokens
-    """
-    from services.users import create_user
-    
-    # Create user
-    user = await create_user(
-        email=user_data.email,
-        password=user_data.password,
-        plan=user_data.plan,
-        company_id=user_data.company_id,
-        team_id=user_data.team_id
-    )
-    
-    # Create tokens for new user
-    return await create_tokens(user["id"], user.get("plan", "free"))
-
-
-@api_router.put("/user", response_model=User)
-async def update_current_user(
-    user_update: UserUpdate,
-    current_user: dict = Depends(get_current_active_user)
-):
-    """
-    Update current user's profile
-    Protected route - requires valid JWT token
-    """
-    from services.users import update_user
-    
-    updates = {k: v for k, v in user_update.dict().items() if v is not None}
-    
-    if not updates:
-        return current_user
-    
-    updated = await update_user(current_user["id"], updates)
-    if updated:
-        return updated
-    
-    return current_user
-
-
-@api_router.post("/login", response_model=TokenResponse)
-async def login(form_data: OAuth2PasswordRequestForm = Depends(), request: Request = None):
-    """
-    Login endpoint - returns JWT access token and opaque refresh token
-    Uses OAuth2PasswordRequestForm for standard compatibility
-    """
-    import os
-    from services.tokens import create_tokens
-    
-    # Normalize and validate email
-    email = normalize_and_validate_email(form_data.username)
-    
-    # Find user by email
-    user = await db.users.find_one({"email": email})
-    
-    if not user or not verify_password(form_data.password, user.get("password_hash", "")):
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid email or password",
-            headers={"WWW-Authenticate": "Bearer"}
-        )
-    
-    # Create tokens
-    response = await create_tokens(user["id"], user.get("plan", "free"), user.get("role", "member"))
-    
-    # Set secure cookie for refresh token
-    if request:
-        response["cookie_settings"] = {
-            "httponly": True,
-            "secure": True,
-            "samesite": "strict",
-            "path": "/api/auth"
-        }
-    
-    return response
-
-
-@api_router.post("/refresh")
-async def refresh_token(refresh_token: str, jti: str, request: Request):
-    """
-    Refresh access token using refresh token with CSRF protection
-    """
-    import os
-    from services.tokens import rotate_refresh_token
-    
-    # SameSite=strict prevents cross-site requests entirely
-    # Additional: Verify Origin/Referer headers match expected host
-    origin = request.headers.get("origin")
-    expected_origin = os.environ.get("ALLOWED_ORIGIN", "https://app.example.com")
-    
-    if origin and origin != expected_origin:
-        logger.warning(f"CSRF suspicion: origin={origin}, expected={expected_origin}")
-        raise HTTPException(status_code=403, detail="Invalid origin")
-    
-    try:
-        return await rotate_refresh_token(refresh_token, jti)
-    except HTTPException:
-        raise
-    except Exception:
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid refresh token",
-            headers={"WWW-Authenticate": "Bearer"}
-        )
-
-
-@api_router.post("/logout")
-async def logout(jti: str):
-    """
-    Logout - revoke refresh token
-    """
-    from services.tokens import revoke_token
-    
-    revoked = await revoke_token(jti)
-    return {"revoked": revoked}
-
-
 @api_router.get("/health")
 async def health():
     start, end, period_id = get_current_period()
@@ -2046,12 +1813,10 @@ async def get_week_stats():
     
     user_goals = await get_user_goals(CURRENT_USER_ID)
     all_bookings, all_spins, all_misc = [], [], []
-    total_calls = 0
     for e in entries:
         all_bookings.extend(e.get("bookings", []))
         all_spins.extend(e.get("spins", []))
         all_misc.extend(e.get("misc_income", []))
-        total_calls += e.get("calls_received", 0)
     
     total_profit = sum(b.get("profit", 0) for b in all_bookings)
     total_spins_amount = sum(s.get("amount", 0) for s in all_spins)
@@ -2062,20 +1827,7 @@ async def get_week_stats():
     service_fee = gross_pesos * 0.17
     net_pesos = gross_pesos - service_fee
     
-    return {
-        "period": "week",
-        "start_date": start_date.isoformat(),
-        "end_date": end_date.isoformat(),
-        "days_tracked": len(entries),
-        "goals": {
-            "earnings": user_goals.get("combined_weekly", 366.00),
-            "reservations": user_goals.get("reservations_weekly", 96),
-            "calls": user_goals.get("calls_weekly", 640)
-        },
-        "reservations": {"current": len(all_bookings), "goal": user_goals.get("reservations_weekly", 96)},
-        "calls": {"current": total_calls, "goal": user_goals.get("calls_weekly", 640)},
-        "earnings": {"usd": {"profit": round(total_profit, 2), "spins": round(total_spins_amount, 2), "misc": round(total_misc, 2), "total": round(total_profit + total_spins_amount + total_misc, 2)}, "pesos": {"gross_pesos": round(gross_pesos, 2), "service_fee": round(service_fee, 2), "payday_deduction": 0, "net_pesos": round(net_pesos, 2)}, "peso_rate": peso_rate}
-    }
+    return {"period": "week", "start_date": start_date.isoformat(), "end_date": end_date.isoformat(), "days_tracked": len(entries), "earnings": {"usd": {"profit": round(total_profit, 2), "spins": round(total_spins_amount, 2), "misc": round(total_misc, 2), "total": round(total_profit + total_spins_amount + total_misc, 2)}, "pesos": {"gross_pesos": round(gross_pesos, 2), "service_fee": round(service_fee, 2), "payday_deduction": 0, "net_pesos": round(net_pesos, 2)}, "peso_rate": peso_rate}}
 
 
 @api_router.get("/stats/period")
@@ -2305,116 +2057,26 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-# =============================================================================
-# TENANT ISOLATION MIDDLEWARE
-# =============================================================================
-
-from starlette.middleware.base import BaseHTTPMiddleware
-from fastapi.responses import JSONResponse
-
-
-class TenantIsolationMiddleware(BaseHTTPMiddleware):
-    """
-    Enforce tenant isolation for multi-tenant requests
-    Verifies that user's company_id matches the requested tenant
-    """
-    
-    async def dispatch(self, request, call_next):
-        # Skip for public routes
-        public_routes = ["/login", "/refresh", "/health", "/"]
-        if any(request.url.path.startswith(route) for route in public_routes):
-            return await call_next(request)
-        
-        # Skip for routes that don't use tenant isolation
-        if request.url.path.startswith("/api/periods") or request.url.path.startswith("/api/stats"):
-            return await call_next(request)
-        
-        # Get current user from token
-        try:
-            from services.tokens import validate_access_token
-            from fastapi import Request
-            
-            # Extract token from header
-            auth_header = request.headers.get("Authorization", "")
-            if auth_header.startswith("Bearer "):
-                token = auth_header[7:]
-                payload = await validate_access_token(token)
-                user_id = payload.get("sub")
-                
-                if user_id:
-                    user = await db.users.find_one({"id": user_id})
-                    if user:
-                        # Store user info in request state for downstream use
-                        request.state.user = user
-                        request.state.company_id = user.get("company_id")
-                        request.state.team_id = user.get("team_id")
-        except Exception:
-            pass  # Will be handled by auth dependency on protected routes
-        
-        return await call_next(request)
-
-
-app.add_middleware(TenantIsolationMiddleware)
-
 # STARTUP/SHUTDOWN
 @app.on_event("startup")
 async def startup_event():
-    """Ordered, blocking startup validation. Any failure = immediate termination."""
-    from backend.db.validators import (
-        verify_database_connection,
-        initialize_database_schema,
-        verify_schema_enforcement,
-        verify_unique_indexes,
-        validate_auth_system_integrity,
-        verify_tenant_validation_works,
-        verify_audit_immutability,
-    )
-    from backend.services.tokens import load_jwt_keys
+    # Ensure indexes for multi-user queries
+    await db.daily_entries.create_index([("user_id", 1), ("date", 1)])
+    await db.period_logs.create_index([("user_id", 1), ("period_id", 1)])
+    await db.user_goals.create_index("user_id", unique=True)
+    await db.daily_archives.create_index([("user_id", 1), ("date", 1), ("type", 1)])
     
-    logger.info("Starting system hardening...")
+    # Index for daily snapshots (smart hybrid model)
+    await db.daily_snapshots.create_index([("user_id", 1), ("period_id", 1), ("snapshot_date", 1)])
+    await db.daily_snapshots.create_index("generated_at")
     
-    # 0. Load JWT keys for rotation support
-    load_jwt_keys()
-    logger.info("✓ JWT keys loaded with rotation support")
-    
-    # 1. Database connectivity
-    await verify_database_connection(db)
-    logger.info("✓ Database connection verified")
-    
-    # 2. Initialize collections with schemas (creates if missing, updates if exists)
-    await initialize_database_schema(db)
-    logger.info("✓ Database schema initialized")
-    
-    # 3. Create unique indexes (structural constraints)
-    # (Already done in initialize_database_schema)
-    logger.info("✓ Unique indexes created")
-    
-    # 4. Verify schemas are actually enforced
-    await verify_schema_enforcement(db)
-    logger.info("✓ Schema enforcement verified")
-    
-    # 5. Verify unique indexes exist
-    await verify_unique_indexes(db)
-    logger.info("✓ Unique indexes verified")
-    
-    # 6. Verify enum/hierarchy completeness
-    await validate_auth_system_integrity(db)
-    logger.info("✓ Auth system integrity verified")
-    
-    # 7. Test tenant integrity enforcement
-    await verify_tenant_validation_works(db)
-    logger.info("✓ Tenant validation verified")
-    
-    # 8. Verify audit log immutability
-    await verify_audit_immutability(db)
-    logger.info("✓ Audit immutability verified")
+    # Indexes for smart thresholds and alert cooldowns
+    await db.alert_cooldowns.create_index("key", unique=True)
+    await db.alert_cooldowns.create_index("timestamp")
+    await db.signal_history.create_index([("user_id", 1), ("timestamp", -1)])
     
     start_scheduler()
-    logger.info("=" * 50)
-    logger.info("SYSTEM HARDENING COMPLETE")
-    logger.info("All structural integrity constraints active")
-    logger.info("=" * 50)
+    logger.info("Application startup complete with smart thresholds and alert cooldowns to prevent toxic behavior")
 
 @app.on_event("shutdown")
 async def shutdown_event():
