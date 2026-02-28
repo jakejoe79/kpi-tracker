@@ -1342,7 +1342,7 @@ from fastapi.security import OAuth2PasswordBearer
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
-from services.auth import verify_password, normalize_and_validate_email
+from services.auth import verify_password
 from services.tokens import create_tokens
 
 
