@@ -44,7 +44,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 import statistics
 
-from backend.constants import SPIN_RULES, calculate_progress, is_on_track, get_status
+from .constants import SPIN_RULES, calculate_progress, is_on_track, get_status
 
 
 ROOT_DIR = Path(__file__).parent
@@ -124,6 +124,11 @@ if not mongo_url:
 
 client = AsyncIOMotorClient(mongo_url)
 db = client[db_name]
+
+# Inject db into services to avoid circular imports
+from . import services
+services.tokens.db = db
+services.auth.db = db
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
@@ -1363,7 +1368,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
     Get current user from JWT access token
     Used as dependency for protected routes
     """
-    from backend.services.tokens import decode_access_token
+    from .services.tokens import decode_access_token
     
     payload = decode_access_token(token)
     user_id = payload.get("sub")
@@ -1506,7 +1511,7 @@ async def refresh_token(refresh_token: str, jti: str, request: Request):
     Refresh access token using refresh token with CSRF protection
     """
     import os
-    from backend.services.tokens import rotate_refresh_token
+    from .services.tokens import rotate_refresh_token
     
     # SameSite=strict prevents cross-site requests entirely
     # Additional: Verify Origin/Referer headers match expected host
@@ -2355,7 +2360,7 @@ app.add_middleware(TenantIsolationMiddleware)
 @app.on_event("startup")
 async def startup_event():
     """Ordered, blocking startup validation. Any failure = immediate termination."""
-    from backend.db.validators import (
+    from .db.validators import (
         verify_database_connection,
         initialize_database_schema,
         verify_schema_enforcement,
@@ -2364,7 +2369,7 @@ async def startup_event():
         verify_tenant_validation_works,
         verify_audit_immutability,
     )
-    from backend.services.tokens import load_jwt_keys
+    from .services.tokens import load_jwt_keys
     
     logger.info("Starting system hardening...")
     

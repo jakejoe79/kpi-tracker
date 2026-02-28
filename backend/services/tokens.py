@@ -9,7 +9,8 @@ import bcrypt
 from jose import jwt
 from fastapi import HTTPException, status
 
-from backend.server import db
+# db will be injected at runtime to avoid circular imports
+db = None
 
 # Configuration
 JWT_SECRET = os.getenv("JWT_SECRET", "dev-fake-secret-change-me!")
@@ -115,6 +116,10 @@ async def create_tokens(user_id: str, tier: str, role: str) -> Dict:
         "token_type": "bearer"
     }
     """
+    global db
+    if db is None:
+        from ..server import db
+    
     # JWT Access Token (short-lived, stateless)
     access_token = create_access_token(user_id, tier, role)
     
@@ -158,6 +163,10 @@ async def validate_refresh_token(refresh_token: str, jti: str) -> Optional[Dict]
     
     Returns: DB document if valid, None if invalid/expired/revoked
     """
+    global db
+    if db is None:
+        from ..server import db
+    
     doc = await db.refresh_tokens.find_one({"jti": jti})
     
     if not doc:
@@ -182,6 +191,10 @@ async def rotate_refresh_token(refresh_token: str, jti: str) -> Dict:
     Returns: New token set
     Raises: HTTPException(401) if rotation fails
     """
+    global db
+    if db is None:
+        from ..server import db
+    
     # Validate old token
     doc = await validate_refresh_token(refresh_token, jti)
     if not doc:
@@ -221,6 +234,10 @@ async def revoke_token(jti: str) -> bool:
     
     Returns: True if token was revoked
     """
+    global db
+    if db is None:
+        from ..server import db
+    
     result = await db.refresh_tokens.update_one(
         {"jti": jti},
         {
@@ -239,6 +256,10 @@ async def revoke_user_tokens(user_id: str) -> int:
     
     Returns: Number of tokens revoked
     """
+    global db
+    if db is None:
+        from ..server import db
+    
     result = await db.refresh_tokens.update_many(
         {"user_id": user_id},
         {
@@ -257,6 +278,10 @@ async def cleanup_expired_tokens() -> int:
     
     Returns: Number of tokens deleted
     """
+    global db
+    if db is None:
+        from ..server import db
+    
     result = await db.refresh_tokens.delete_many({
         "$or": [
             {"expires_at": {"$lt": datetime.now(timezone.utc)}},

@@ -5,6 +5,9 @@ import bcrypt
 from fastapi import HTTPException, status
 from datetime import datetime, timezone
 
+# db will be injected at runtime to avoid circular imports
+db = None
+
 
 def hash_password(password: str) -> str:
     """Hash a password using bcrypt"""
@@ -41,8 +44,11 @@ async def revoke_all_user_tokens(user_id: str, reason: str = "manual") -> int:
     
     Returns: Number of tokens revoked
     """
-    from backend.server import db
-    from backend.services.tokens import revoke_user_tokens
+    global db
+    if db is None:
+        from ..server import db
+    
+    from .tokens import revoke_user_tokens
     
     # Revoke all tokens
     count = await revoke_user_tokens(user_id)
