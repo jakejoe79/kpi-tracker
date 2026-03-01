@@ -452,25 +452,22 @@ async def ensure_collection_with_schema(db, name: str, schema: dict) -> None:
     """
     Safe collection creation with schema.
     Handles both new databases and existing collections.
+    Note: Schema validation is skipped for MongoDB Atlas free tier compatibility.
     """
     existing = await db.list_collection_names()
     
     if name not in existing:
-        # Create new collection with validator
-        await db.create_collection(name, validator=schema)
-        logger.info(f"Created collection {name} with schema")
-    else:
-        # Apply/update validator on existing
+        # Create new collection without validator (for free tier compatibility)
         try:
-            await db.command({"collMod": name, **schema})
-            logger.info(f"Updated schema on existing collection {name}")
+            await db.create_collection(name)
+            logger.info(f"Created collection {name}")
         except Exception as e:
-            if "ns does not exist" in str(e):
-                # Race condition - collection created between check and collMod
-                logger.warning(f"Collection {name} race condition, retrying...")
-                await asyncio.sleep(0.1)
-                return await ensure_collection_with_schema(db, name, schema)
-            raise
+            if "already exists" in str(e):
+                logger.info(f"Collection {name} already exists")
+            else:
+                raise
+    else:
+        logger.info(f"Collection {name} already exists")
 
 
 async def initialize_database_schema(db) -> None:
