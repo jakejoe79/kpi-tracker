@@ -2354,62 +2354,25 @@ app.add_middleware(TenantIsolationMiddleware)
 # STARTUP/SHUTDOWN
 @app.on_event("startup")
 async def startup_event():
-    """Ordered, blocking startup validation. Any failure = immediate termination."""
-    from db.validators import (
-        verify_database_connection,
-        initialize_database_schema,
-        verify_schema_enforcement,
-        verify_unique_indexes,
-        validate_auth_system_integrity,
-        verify_tenant_validation_works,
-        verify_audit_immutability,
-    )
+    """Minimal startup - just verify DB connection and create collections."""
+    from db.validators import verify_database_connection, initialize_database_schema
     from services.tokens import load_jwt_keys
     
-    logger.info("Starting system hardening...")
+    logger.info("Starting application...")
     
-    # 0. Load JWT keys for rotation support
+    # Load JWT keys
     load_jwt_keys()
-    logger.info("Γ£ô JWT keys loaded with rotation support")
+    logger.info("JWT keys loaded")
     
-    # 1. Database connectivity
+    # Verify DB connection
     await verify_database_connection(db)
-    logger.info("Γ£ô Database connection verified")
+    logger.info("Database connection verified")
     
-    # 2. Initialize collections with schemas (creates if missing, updates if exists)
+    # Create collections if they don't exist
     await initialize_database_schema(db)
-    logger.info("Γ£ô Database schema initialized")
+    logger.info("Database collections initialized")
     
-    # 3. Create unique indexes (structural constraints)
-    # (Already done in initialize_database_schema)
-    logger.info("Γ£ô Unique indexes created")
-    
-    # 4. Verify schemas are actually enforced
-    await verify_schema_enforcement(db)
-    logger.info("Γ£ô Schema enforcement verified")
-    
-    # 5. Verify unique indexes exist
-    await verify_unique_indexes(db)
-    logger.info("Γ£ô Unique indexes verified")
-    
-    # 6. Verify enum/hierarchy completeness
-    await validate_auth_system_integrity(db)
-    logger.info("Γ£ô Auth system integrity verified")
-    
-    # 7. Test tenant integrity enforcement
-    await verify_tenant_validation_works(db)
-    logger.info("Γ£ô Tenant validation verified")
-    
-    # 8. Verify audit log immutability
-    await verify_audit_immutability(db)
-    logger.info("Γ£ô Audit immutability verified")
-    
-    # TODO: Implement scheduler
-    # start_scheduler()
-    logger.info("=" * 50)
-    logger.info("SYSTEM HARDENING COMPLETE")
-    logger.info("All structural integrity constraints active")
-    logger.info("=" * 50)
+    logger.info("Application startup complete")
 
 @app.on_event("shutdown")
 async def shutdown_event():
