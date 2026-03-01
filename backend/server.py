@@ -2355,7 +2355,7 @@ app.add_middleware(TenantIsolationMiddleware)
 @app.on_event("startup")
 async def startup_event():
     """Ordered, blocking startup validation. Any failure = immediate termination."""
-    from .db.validators import (
+    from db.validators import (
         verify_database_connection,
         initialize_database_schema,
         verify_schema_enforcement,
@@ -2364,7 +2364,7 @@ async def startup_event():
         verify_tenant_validation_works,
         verify_audit_immutability,
     )
-    from .services.tokens import load_jwt_keys
+    from services.tokens import load_jwt_keys
     
     logger.info("Starting system hardening...")
     
