@@ -2404,7 +2404,8 @@ async def startup_event():
     await verify_audit_immutability(db)
     logger.info("Γ£ô Audit immutability verified")
     
-    start_scheduler()
+    # TODO: Implement scheduler
+    # start_scheduler()
     logger.info("=" * 50)
     logger.info("SYSTEM HARDENING COMPLETE")
     logger.info("All structural integrity constraints active")
@@ -2412,7 +2413,8 @@ async def startup_event():
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    scheduler.shutdown()
+    # TODO: Implement scheduler
+    # scheduler.shutdown()
     client.close()
     logger.info("Application shutdown complete")
 
