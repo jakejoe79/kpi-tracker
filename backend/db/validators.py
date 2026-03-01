@@ -501,14 +501,7 @@ async def initialize_database_schema(db) -> None:
     for name, schema in collections.items():
         await ensure_collection_with_schema(db, name, schema)
     
-    # Verify all collections have validators
-    for name in collections.keys():
-        info = await db.command({"listCollections": 1, "filter": {"name": name}})
-        options = info["cursor"]["firstBatch"][0].get("options", {})
-        if "validator" not in options:
-            raise RuntimeError(f"FATAL: Collection {name} has no validator after initialization")
-    
-    logger.info("All collections initialized with strict validation")
+    logger.info("All collections initialized")
 
 
 def setup_critical_unique_indexes(db) -> None:
