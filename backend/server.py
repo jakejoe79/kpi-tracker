@@ -2380,30 +2380,6 @@ async def shutdown_event():
     # scheduler.shutdown()
     client.close()
     logger.info("Application shutdown complete")
-            detail={
-                "error": "Period statistics require Pro plan or higher",
-                "current_plan": user.plan,
-                "required_plan": "pro"
-            }
-        )
-
-    start_date, end_date, period_id = get_current_period()
-
-    entries = await db.daily_entries.find({
-        "user_id": CURRENT_USER_ID,
-        "date": {"$gte": start_date, "$lte": end_date}
-    }).to_list(1000)
-
-    # Aggregate statistics
-    user_goals = await get_user_goals(CURRENT_USER_ID)
-    total_calls = sum(e.get("calls_received", 0) for e in entries)
-    all_bookings = []
-    all_spins = []
-    all_misc = []
-
-    for e in entries:
-        all_bookings.extend(e.get("bookings", []))
-        all_spins.extend(e.get("spins", []))
         all_misc.extend(e.get("misc_income", []))
 
     total_bookings = len(all_bookings)
