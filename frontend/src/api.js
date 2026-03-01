@@ -23,3 +23,15 @@ export const login = (email, pass) => apiCall('login', {
 });
 
 export const getMe = () => apiCall('me');
+
+export const updateSetting = (key, value) => apiCall('settings', {
+  method: 'PUT',
+  body: JSON.stringify({ [key]: value }),
+});
+
+export const updateSettings = (settings) => apiCall('settings', {
+  method: 'PUT',
+  body: JSON.stringify(settings),
+});
+
+export const getSettings = () => apiCall('settings');

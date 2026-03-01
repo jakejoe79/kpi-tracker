@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Save, Settings as SettingsIcon, RotateCcw, DollarSign, Target, Phone, Calendar, Gift, Clock } from 'lucide-react';
+import { GoalSetter } from './components/GoalSetter';
+import { updateSettings, getSettings } from './api';
+import { createErrorToast, createSuccessToast } from './lib/error-handling';
 
 const DEFAULT_GOALS = {
   calls_biweekly: 10,
@@ -24,12 +27,54 @@ const DEFAULT_CONVERSION = {
 function Settings({ goals, setGoals, onSettingsChange }) {
   const [conversion, setConversion] = useState(DEFAULT_CONVERSION);
   const [saved, setSaved] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
-    const savedGoals = localStorage.getItem('kpi_goals');
-    const savedConversion = localStorage.getItem('kpi_conversion');
-    if (savedGoals) setGoals(JSON.parse(savedGoals));
-    if (savedConversion) setConversion(JSON.parse(savedConversion));
+    const loadSettings = async () => {
+      try {
+        // Try to load from backend first
+        const backendSettings = await getSettings();
+        
+        if (backendSettings && backendSettings.peso_rate) {
+          // Update conversion settings from backend
+          setConversion(prev => ({ 
+            ...prev, 
+            exchange_rate: backendSettings.peso_rate,
+            processing_fee_percent: backendSettings.processing_fee_percent || prev.processing_fee_percent,
+            period_fee: backendSettings.period_fee || prev.period_fee
+          }));
+          
+          // Update goals from backend if available
+          if (backendSettings.goals) {
+            setGoals(backendSettings.goals);
+            
+            // Also save to localStorage for offline access
+            localStorage.setItem('kpi_goals', JSON.stringify(backendSettings.goals));
+            localStorage.setItem('kpi_conversion', JSON.stringify({ 
+              ...DEFAULT_CONVERSION, 
+              exchange_rate: backendSettings.peso_rate,
+              processing_fee_percent: backendSettings.processing_fee_percent || DEFAULT_CONVERSION.processing_fee_percent,
+              period_fee: backendSettings.period_fee || DEFAULT_CONVERSION.period_fee
+            }));
+          }
+        } else {
+          // Fallback to localStorage if backend doesn't have settings
+          const savedGoals = localStorage.getItem('kpi_goals');
+          const savedConversion = localStorage.getItem('kpi_conversion');
+          if (savedGoals) setGoals(JSON.parse(savedGoals));
+          if (savedConversion) setConversion(JSON.parse(savedConversion));
+        }
+      } catch (error) {
+        // If backend call fails, fallback to localStorage
+        console.error('Error loading settings from backend:', error);
+        const savedGoals = localStorage.getItem('kpi_goals');
+        const savedConversion = localStorage.getItem('kpi_conversion');
+        if (savedGoals) setGoals(JSON.parse(savedGoals));
+        if (savedConversion) setConversion(JSON.parse(savedConversion));
+      }
+    };
+    
+    loadSettings();
   }, [setGoals]);
 
   const handleGoalChange = (key, value) => {
@@ -40,13 +85,52 @@ function Settings({ goals, setGoals, onSettingsChange }) {
     setConversion(prev => ({ ...prev, [key]: parseFloat(value) || 0 }));
   };
 
-  const saveSettings = () => {
-    localStorage.setItem('kpi_goals', JSON.stringify(goals));
-    localStorage.setItem('kpi_conversion', JSON.stringify(conversion));
-    if (onSettingsChange) onSettingsChange({ goals, conversion });
-    window.dispatchEvent(new Event('kpi_updated'));
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+  const saveSettings = async () => {
+    setIsSaving(true);
+    
+    // Save current state to revert if API call fails
+    const previousGoals = { ...goals };
+    const previousConversion = { ...conversion };
+    
+    try {
+      // Save to localStorage for immediate UI update
+      localStorage.setItem('kpi_goals', JSON.stringify(goals));
+      localStorage.setItem('kpi_conversion', JSON.stringify(conversion));
+      
+      // Prepare all settings for backend in one call
+      const settingsToSave = {
+        peso_rate: conversion.exchange_rate,  // Map exchange_rate to peso_rate for backend
+        processing_fee_percent: conversion.processing_fee_percent,
+        period_fee: conversion.period_fee,
+        goals: goals
+      };
+      
+      // Call backend API to save all settings at once
+      await updateSettings(settingsToSave);
+      
+      // Show success toast
+      createSuccessToast('Settings saved successfully!');
+      
+      // Update UI state
+      if (onSettingsChange) onSettingsChange({ goals, conversion });
+      window.dispatchEvent(new Event('kpi_updated'));
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+      
+    } catch (error) {
+      // Revert to previous state
+      setGoals(previousGoals);
+      setConversion(previousConversion);
+      localStorage.setItem('kpi_goals', JSON.stringify(previousGoals));
+      localStorage.setItem('kpi_conversion', JSON.stringify(previousConversion));
+      
+      // Show error toast
+      createErrorToast(`Failed to save settings: ${error.message || 'Unknown error'}`);
+      
+      console.error('Error saving settings:', error);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const resetToDefaults = () => {
@@ -96,8 +180,13 @@ function Settings({ goals, setGoals, onSettingsChange }) {
           <button className="btn btn-secondary" onClick={resetToDefaults} data-testid="reset-defaults-btn">
             <RotateCcw size={16} /> Reset Defaults
           </button>
-          <button onClick={saveSettings} style={{ background: saved ? 'var(--success)' : 'var(--primary)' }} data-testid="save-settings-btn">
-            <Save size={16} /> {saved ? 'Saved!' : 'Save Settings'}
+          <button 
+            onClick={saveSettings} 
+            style={{ background: saved ? 'var(--success)' : 'var(--primary)' }} 
+            data-testid="save-settings-btn"
+            disabled={isSaving}
+          >
+            <Save size={16} /> {isSaving ? 'Saving...' : (saved ? 'Saved!' : 'Save Settings')}
           </button>
         </div>
       </div>
@@ -134,4 +223,25 @@ function Settings({ goals, setGoals, onSettingsChange }) {
             <div>
               <span style={{ color: '#64748b' }}>Base:</span>
               <div style={{ fontWeight: 'bold', color: '#92400E' }}>${exampleBase.toFixed(2)} MXN</div>
-            </
+            </div>
+            <div>
+              <span style={{ color: '#64748b' }}>Fee:</span>
+              <div style={{ fontWeight: 'bold', color: '#92400E' }}>${exampleFee.toFixed(2)} MXN</div>
+            </div>
+            <div>
+              <span style={{ color: '#64748b' }}>Total:</span>
+              <div style={{ fontWeight: 'bold', color: '#92400E' }}>${exampleTotal.toFixed(2)} MXN</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Dynamic Goal Recalculation Settings */}
+      <div style={{ marginTop: '2rem' }}>
+        <GoalSetter userId={null} onTargetsUpdated={() => window.dispatchEvent(new Event('kpi_updated'))} />
+      </div>
+    </div>
+  );
+}
+
+export default Settings;

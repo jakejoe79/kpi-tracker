@@ -4,10 +4,12 @@ import { Toaster, toast } from 'sonner';
 import {
   Phone, Calendar, DollarSign, Star, Clock, TrendingUp,
   Plus, Trash2, Play, Square, Download, Settings, X, Loader2,
-  RefreshCw, ChevronDown, ChevronUp, Zap, Lock
+  RefreshCw, ChevronDown, ChevronUp, Zap, Lock, BarChart3
 } from 'lucide-react';
 import ForecastDashboard from './ForecastDashboard';
+import { GoalDisplay } from './components/GoalDisplay';
 import { useRealtimePolling } from './hooks/use-realtime-polling';
+import StatsDashboard from './StatsDashboard';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${API_URL}/api`;
@@ -125,6 +127,10 @@ const WorkTimer = ({ timerStart, onStart, onStop, lastBookingTime, onTimeCalcula
   };
   
   const handleStart = async () => {
+    // Prevent multiple clicks while timer is starting
+    if (isRunning) {
+      return;
+    }
     await onStart();
   };
   
@@ -239,6 +245,7 @@ function App() {
   const [todayEntry, setTodayEntry] = useState(null);
   const [modal, setModal] = useState(null);
   const [settingsModal, setSettingsModal] = useState(false);
+  const [showStatsDashboard, setShowStatsDashboard] = useState(false);
   
   // Team forecast state (Individual+ plans)
   const [teamForecast, setTeamForecast] = useState(null);
@@ -329,7 +336,8 @@ function App() {
       await axios.post(`${API}/entries/${today}/timer/start`);
       fetchData();
     } catch (error) {
-      toast.error('Failed to start timer');
+      const errorMessage = error.response?.data?.detail || error.message || 'Failed to start timer';
+      toast.error(errorMessage);
     }
   };
   
@@ -494,6 +502,11 @@ function App() {
       </div>
     );
   }
+
+  // Show stats dashboard if toggled
+  if (showStatsDashboard) {
+    return <StatsDashboard onBack={() => setShowStatsDashboard(false)} />;
+  }
   
   const stats = todayStats;
   const prepaidCount = stats?.reservations?.prepaid_count || 0;
@@ -514,6 +527,14 @@ function App() {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowStatsDashboard(true)}
+              className="p-2 hover:bg-zinc-800 rounded-lg"
+              data-testid="stats-dashboard-btn"
+              title="Live Goals Dashboard"
+            >
+              <BarChart3 size={20} className="text-zinc-400" />
+            </button>
             <button
               onClick={() => setSettingsModal(true)}
               className="p-2 hover:bg-zinc-800 rounded-lg"
@@ -539,6 +560,9 @@ function App() {
         {isIndividualOrHigher && showTeamDashboard && teamForecast && (
           <ForecastDashboard forecast={teamForecast} signals={topSignals} />
         )}
+        
+        {/* Dynamic Goals Display */}
+        <GoalDisplay userId={settings?.user_id} />
         
         {/* Combined Goal Banner */}
         {stats && (

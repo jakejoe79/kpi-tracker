@@ -1,0 +1,114 @@
+.time-remaining-widget {
+  padding: 1.5rem;
+  border-radius: 0.375rem;
+  border-left: 4px solid #d1d5db;
+  background-color: #f9fafb;
+}
+
+.time-remaining-widget.status-on-track {
+  border-left-color: #10b981;
+  background-color: #ecfdf5;
+}
+
+.time-remaining-widget.status-moderate {
+  border-left-color: #f59e0b;
+  background-color: #fffbeb;
+}
+
+.time-remaining-widget.status-behind {
+  border-left-color: #ef4444;
+  background-color: #fef2f2;
+}
+
+.time-remaining-empty {
+  padding: 2rem;
+  text-align: center;
+  color: #9ca3af;
+  font-size: 0.875rem;
+}
+
+.time-remaining-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.time-remaining-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #1f2937;
+  margin: 0;
+}
+
+.time-remaining-icon {
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.time-remaining-display {
+  margin-bottom: 1rem;
+}
+
+.time-remaining-value {
+  font-size: 2rem;
+  font-weight: 700;
+  color: #1f2937;
+  margin-bottom: 0.25rem;
+}
+
+.time-remaining-label {
+  font-size: 0.875rem;
+  color: #6b7280;
+}
+
+.time-remaining-pace {
+  margin-bottom: 1rem;
+}
+
+.pace-indicator {
+  display: inline-block;
+  padding: 0.5rem 1rem;
+  border-radius: 0.25rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.pace-indicator.pace-on-track {
+  background-color: #d1fae5;
+  color: #065f46;
+}
+
+.pace-indicator.pace-moderate {
+  background-color: #fef3c7;
+  color: #92400e;
+}
+
+.pace-indicator.pace-behind {
+  background-color: #fee2e2;
+  color: #991b1b;
+}
+
+.time-remaining-warning {
+  padding: 0.75rem;
+  background-color: rgba(239, 68, 68, 0.1);
+  border-radius: 0.25rem;
+  font-size: 0.8125rem;
+  color: #991b1b;
+  line-height: 1.5;
+}
+
+/* Mobile Layout */
+@media (max-width: 767px) {
+  .time-remaining-widget {
+    padding: 1rem;
+  }
+
+  .time-remaining-value {
+    font-size: 1.5rem;
+  }
+
+  .time-remaining-title {
+    font-size: 1rem;
+  }
+}

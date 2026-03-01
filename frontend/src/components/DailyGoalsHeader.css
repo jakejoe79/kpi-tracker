@@ -1,0 +1,127 @@
+.goals-header {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.goals-header-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #1f2937;
+  margin: 0;
+}
+
+.goals-header-empty {
+  padding: 2rem;
+  text-align: center;
+  color: #9ca3af;
+  font-size: 0.875rem;
+}
+
+.goals-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+}
+
+.goal-card {
+  padding: 1rem;
+  border-radius: 0.375rem;
+  border-left: 4px solid #d1d5db;
+  background-color: #f9fafb;
+  position: relative;
+}
+
+.goal-card.status-green {
+  border-left-color: #10b981;
+  background-color: #ecfdf5;
+}
+
+.goal-card.status-yellow {
+  border-left-color: #f59e0b;
+  background-color: #fffbeb;
+}
+
+.goal-card.status-red {
+  border-left-color: #ef4444;
+  background-color: #fef2f2;
+}
+
+.goal-card.status-neutral {
+  border-left-color: #d1d5db;
+  background-color: #f9fafb;
+}
+
+.goal-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: #6b7280;
+  margin-bottom: 0.5rem;
+  letter-spacing: 0.05em;
+}
+
+.goal-target {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #1f2937;
+  margin-bottom: 0.5rem;
+}
+
+.goal-current {
+  font-size: 0.875rem;
+  color: #6b7280;
+}
+
+.goal-value {
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.goal-status-indicator {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background-color: currentColor;
+}
+
+.goal-card.status-green .goal-status-indicator {
+  background-color: #10b981;
+}
+
+.goal-card.status-yellow .goal-status-indicator {
+  background-color: #f59e0b;
+}
+
+.goal-card.status-red .goal-status-indicator {
+  background-color: #ef4444;
+}
+
+/* Tablet Layout */
+@media (max-width: 1023px) {
+  .goals-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* Mobile Layout */
+@media (max-width: 767px) {
+  .goals-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .goal-card {
+    padding: 0.75rem;
+  }
+
+  .goal-target {
+    font-size: 1.25rem;
+  }
+
+  .goal-label {
+    font-size: 0.7rem;
+  }
+}
