@@ -2380,24 +2380,6 @@ async def shutdown_event():
     # scheduler.shutdown()
     client.close()
     logger.info("Application shutdown complete")
-        all_misc.extend(e.get("misc_income", []))
-
-    total_bookings = len(all_bookings)
-    total_profit = sum(b.get("profit", 0) for b in all_bookings)
-    total_spins_amount = sum(s.get("amount", 0) for s in all_spins)
-    total_misc = sum(m.get("amount", 0) for m in all_misc)
-
-    peso_rate = user_goals.get("peso_rate", 17.50)
-    gross_pesos = (total_profit + total_spins_amount + total_misc) * peso_rate
-    service_fee = gross_pesos * 0.17
-    net_pesos = gross_pesos - service_fee
-
-    return {
-        "period": "biweekly",
-        "period_id": period_id,
-        "start_date": start_date,
-        "end_date": end_date,
-        "days_tracked": len(entries),
         "earnings": {
             "usd": {
                 "profit": round(total_profit, 2),
