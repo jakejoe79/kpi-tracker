@@ -64,7 +64,7 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 
 CURRENT_USER_ID = "user_001"
-CURRENT_USER_PLAN = "individual"  # Testing Individual plan for 2-3 weeks before rolling out other tiers
+CURRENT_USER_PLAN = "pro"  # Pro tier - all features enabled
 
 # =============================================================================
 # FEATURE REGISTRY
@@ -84,7 +84,7 @@ FEATURES = {
     "alert_system": {"label": "Alert System", "description": "Smart alerts with cooldowns", "required_plan": "group"},
 }
 
-PLAN_HIERARCHY = {"trial": 0, "individual": 1, "pro": 2, "group": 3}
+PLAN_HIERARCHY = {"individual": 1, "pro": 2, "group": 3}
 
 class DenialReason:
     PLAN_LIMIT = "plan_limit"
@@ -211,7 +211,7 @@ def normalize_and_validate_email(email: str) -> str:
 class User(BaseModel):
     id: str
     email: str
-    plan: str = "free"
+    plan: str = "pro"
     password_hash: str = ""
     company_id: str = ""
     team_id: str = ""
@@ -1411,7 +1411,7 @@ async def get_current_active_user(current_user: dict = Depends(get_current_user)
 class UserCreate(BaseModel):
     email: str
     password: str
-    plan: str = "free"
+    plan: str = "pro"
     company_id: str = ""
     team_id: str = ""
 
@@ -1439,7 +1439,7 @@ async def register(user_data: UserCreate):
     )
     
     # Create tokens for new user
-    return await create_tokens(user["id"], user.get("plan", "free"))
+    return await create_tokens(user["id"], user.get("plan", "pro"))
 
 
 @api_router.put("/user", response_model=User)
@@ -1488,7 +1488,7 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), request: Reque
         )
     
     # Create tokens
-    response = await create_tokens(user["id"], user.get("plan", "free"), user.get("role", "member"))
+    response = await create_tokens(user["id"], user.get("plan", "pro"), user.get("role", "member"))
     
     # Set secure cookie for refresh token
     if request:

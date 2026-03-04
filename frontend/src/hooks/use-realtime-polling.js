@@ -4,15 +4,15 @@ import { useEffect, useRef, useCallback } from 'react';
  * Smart polling hook for real-time updates
  * 
  * Only polls for Group plan users
- * Polls every 20 seconds (good balance for Render free tier)
+ * Polls every 20 seconds
  * Stops polling when tab is hidden (saves resources)
  * Resumes when tab becomes visible
  */
 export function useRealtimePolling(fetchFunction, options = {}) {
   const {
     enabled = true,
-    interval = 20000, // 20 seconds - good for MVP
-    plan = 'free'
+    interval = 20000, // 20 seconds
+    plan = 'pro'
   } = options;
 
   const intervalRef = useRef(null);

@@ -11,9 +11,6 @@ logger = logging.getLogger(__name__)
 
 class UserTier:
     """User tier enum"""
-    FREE = "free"
-    TRIAL = "trial"
-    INDIVIDUAL = "individual"
     PRO = "pro"
     GROUP = "group"
 
@@ -52,7 +49,7 @@ def get_users_validator() -> Dict[str, Any]:
                 },
                 "tier": {
                     "bsonType": "string",
-                    "enum": ["free", "trial", "individual", "pro", "group"]
+                    "enum": ["pro", "group"]
                 },
                 "role": {
                     "bsonType": "string",
@@ -80,8 +77,8 @@ def get_users_validator() -> Dict[str, Any]:
             },
             "allOf": [
                 {
-                    "if": {"properties": {"tier": {"const": "company"}}},
-                    "then": {"required": ["company_id"], "properties": {"company_id": {"bsonType": "string", "minLength": 1}}}
+                    "if": {"properties": {"tier": {"const": "pro"}}},
+                    "then": {"properties": {"team_id": {"const": None}, "company_id": {"const": None}}}
                 },
                 {
                     "if": {"properties": {"tier": {"const": "group"}}},
@@ -89,7 +86,7 @@ def get_users_validator() -> Dict[str, Any]:
                 },
                 {
                     "if": {"properties": {"role": {"const": "admin"}}},
-                    "then": {"properties": {"tier": {"enum": ["company", "group"]}}}
+                    "then": {"properties": {"tier": {"enum": ["pro", "group"]}}}
                 }
             ]
         },
@@ -109,10 +106,10 @@ def get_users_validator() -> Dict[str, Any]:
                         {"$ne": ["$company_id", None]}
                     ]
                 },
-                # If tier=individual, no tenant IDs
+                # Pro tier users don't have tenant IDs
                 {
                     "$or": [
-                        {"$ne": ["$tier", "individual"]},
+                        {"$ne": ["$tier", "pro"]},
                         {
                             "$and": [
                                 {"$eq": ["$team_id", None]},
@@ -617,7 +614,6 @@ async def validate_auth_system_integrity(db) -> None:
     # Verify tier enum exists
     tier_prop = users_validator["$jsonSchema"]["properties"]["tier"]
     assert "enum" in tier_prop, "tier enum not found"
-    assert "individual" in tier_prop["enum"], "individual tier not in enum"
     assert "pro" in tier_prop["enum"], "pro tier not in enum"
     assert "group" in tier_prop["enum"], "group tier not in enum"
     

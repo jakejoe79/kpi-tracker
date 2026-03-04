@@ -309,8 +309,8 @@ function App() {
   const [editingBooking, setEditingBooking] = useState(null);
   
   const today = new Date().toISOString().split('T')[0];
-  const isPro = settings?.user_plan === 'pro';
-  const isIndividualOrHigher = settings?.user_plan && ['individual', 'pro', 'group'].includes(settings.user_plan);
+  const isPro = settings?.user_plan && ['pro', 'group'].includes(settings.user_plan);
+  const isIndividualOrHigher = settings?.user_plan && ['pro', 'group'].includes(settings.user_plan);
   
   const fetchData = useCallback(async () => {
     try {
@@ -325,7 +325,7 @@ function App() {
       setCallsInput(String(entryRes.data.calls_received || 0));
       setPesoRateInput(String(settingsRes.data.peso_rate || 17.50));
       
-      // Try to fetch pro stats (will 403 if free)
+      // Try to fetch pro stats
       try {
         const [weekRes, periodRes] = await Promise.all([
           axios.get(`${API}/stats/week`, { headers: getAuthHeaders() }),
@@ -334,7 +334,7 @@ function App() {
         setWeekStats(weekRes.data);
         setPeriodStats(periodRes.data);
       } catch (e) {
-        // Free tier - no access
+        // Stats not available
       }
       
       // Fetch team forecast and signals for Individual+ plans
@@ -496,22 +496,7 @@ function App() {
     }
   };
   
-  const togglePlan = async () => {
-    const newPlan = isPro ? 'free' : 'pro';
-    try {
-      await axios.put(`${API}/settings`, { user_plan: newPlan }, { headers: getAuthHeaders() });
-      toast.success(`Switched to ${newPlan.toUpperCase()} plan`);
-      fetchData();
-    } catch (error) {
-      toast.error('Failed to update plan');
-    }
-  };
-  
   const exportCSV = async () => {
-    if (!isPro) {
-      toast.error('Upgrade to Pro for data export');
-      return;
-    }
     window.open(`${API}/export/csv`, '_blank');
   };
   
@@ -586,7 +571,7 @@ function App() {
           <div>
             <h1 className="text-xl font-bold">KPI Tracker</h1>
             <p className="text-xs text-zinc-500">
-              {isPro ? '⭐ Pro Plan' : 'Free Plan'}
+              ⭐ Pro Plan
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -803,53 +788,33 @@ function App() {
           />
         )}
         
-        {/* Week & Period Earnings (Pro Only) */}
-        {isPro ? (
-          <>
-            {weekStats?.earnings && (
-              <EarningsCard
-                title="This Week's Earnings"
-                usd={weekStats.earnings.usd}
-                pesos={weekStats.earnings.pesos}
-                pesoRate={weekStats.earnings.peso_rate}
-              />
-            )}
-            {periodStats?.earnings && (
-              <EarningsCard
-                title="This Pay Period's Earnings"
-                usd={periodStats.earnings.usd}
-                pesos={periodStats.earnings.pesos}
-                pesoRate={periodStats.earnings.peso_rate}
-              />
-            )}
-            
-            {/* Export Button */}
-            <button
-              onClick={exportCSV}
-              className="w-full bg-zinc-800 hover:bg-zinc-700 text-white py-3 rounded-xl font-semibold flex items-center justify-center gap-2"
-              data-testid="export-btn"
-            >
-              <Download size={18} />
-              Export to CSV
-            </button>
-          </>
-        ) : (
-          <div className="bg-zinc-900 rounded-xl p-4 border border-zinc-800 text-center">
-            <div className="flex items-center justify-center gap-2 mb-2">
-              <Lock size={18} className="text-amber-400" />
-              <span className="text-amber-400 font-semibold">Pro Features</span>
-            </div>
-            <p className="text-sm text-zinc-500 mb-3">
-              Unlock weekly stats, period stats, history, and CSV export
-            </p>
-            <button
-              onClick={togglePlan}
-              className="bg-amber-500 hover:bg-amber-600 text-black font-bold py-2 px-6 rounded-lg"
-            >
-              Upgrade to Pro
-            </button>
-          </div>
+        {/* Week & Period Earnings */}
+        {weekStats?.earnings && (
+          <EarningsCard
+            title="This Week's Earnings"
+            usd={weekStats.earnings.usd}
+            pesos={weekStats.earnings.pesos}
+            pesoRate={weekStats.earnings.peso_rate}
+          />
         )}
+        {periodStats?.earnings && (
+          <EarningsCard
+            title="This Pay Period's Earnings"
+            usd={periodStats.earnings.usd}
+            pesos={periodStats.earnings.pesos}
+            pesoRate={periodStats.earnings.peso_rate}
+          />
+        )}
+        
+        {/* Export Button */}
+        <button
+          onClick={exportCSV}
+          className="w-full bg-zinc-800 hover:bg-zinc-700 text-white py-3 rounded-xl font-semibold flex items-center justify-center gap-2"
+          data-testid="export-btn"
+        >
+          <Download size={18} />
+          Export to CSV
+        </button>
         
         {/* Today's Bookings List */}
         {todayEntry?.bookings?.length > 0 && (

@@ -9,7 +9,7 @@ from backend.server import db
 from services.auth import hash_password, get_allowed_create_fields
 
 
-async def create_user(email: str, password: str, plan: str = "free", 
+async def create_user(email: str, password: str, plan: str = "pro", 
                       company_id: str = "", team_id: str = "") -> dict:
     """
     Create a new user with hashed password

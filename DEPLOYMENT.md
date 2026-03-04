@@ -2,6 +2,15 @@
 
 This guide will help you deploy the KPI Tracker application to Render.
 
+## Current Status
+
+**Last Updated:** March 4, 2026
+
+### Deployment Status
+- ✅ Backend: Ready to deploy
+- ✅ Frontend: Ready to deploy
+- ⚠️ Known issues after deployment (see README.md for details)
+
 ## Prerequisites
 
 1. A Render account (sign up at https://render.com)
@@ -32,7 +41,7 @@ This method deploys both backend and frontend automatically using the `render.ya
 4. **Update frontend API URL:**
    - After backend deploys, note its URL (e.g., `https://kpi-tracker-backend.onrender.com`)
    - Go to frontend service settings
-   - Update `REACT_APP_API_URL` environment variable with your backend URL
+   - Update `REACT_APP_BACKEND_URL` environment variable with your backend URL
    - Trigger a manual redeploy of the frontend
 
 ### Option 2: Manual Deployment
@@ -63,7 +72,7 @@ This method deploys both backend and frontend automatically using the `render.ya
    - Connect your repository
    - Configure:
      - Name: `kpi-tracker-frontend`
-     - Build Command: `cd frontend && yarn install && yarn build`
+     - Build Command: `cd frontend && npm install && npm run build`
      - Publish Directory: `frontend/build`
 
 2. **Add environment variable:**
@@ -119,6 +128,10 @@ This method deploys both backend and frontend automatically using the `render.ya
 
 - **404 on page refresh:**
   - Verify rewrite rule is configured: `/*` → `/index.html`
+
+- **Live Goals Dashboard blank:**
+  - This is a known issue - the DashboardLayout component needs to be fixed
+  - The component expects nested data structure but backend returns flat structure
 
 ### Performance
 

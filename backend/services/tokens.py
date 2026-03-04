@@ -222,7 +222,7 @@ async def rotate_refresh_token(refresh_token: str, jti: str) -> Dict:
         )
     
     # Create new tokens
-    return await create_tokens(user["id"], user.get("tier", "free"), user.get("role", "member"))
+    return await create_tokens(user["id"], user.get("tier", "pro"), user.get("role", "member"))
 
 
 async def revoke_token(jti: str) -> bool:
