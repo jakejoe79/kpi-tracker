@@ -2161,18 +2161,6 @@ async def get_settings():
     return {"user_id": CURRENT_USER_ID, "user_plan": settings.get("user_plan", CURRENT_USER_PLAN), "peso_rate": settings.get("peso_rate", 17.50), "goals": settings.get("goals", await get_user_goals(CURRENT_USER_ID))}
 
 
-@api_router.get("/entries/today")
-async def get_today_entry():
-    """Get today's daily entry"""
-    today = date.today().isoformat()
-    _, _, period_id = get_current_period()
-    entry = await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": today})
-    if not entry:
-        entry = {"id": str(uuid.uuid4()), "user_id": CURRENT_USER_ID, "date": today, "period_id": period_id, "calls_received": 0, "bookings": [], "spins": [], "misc_income": [], "work_timer_start": None, "created_at": datetime.utcnow(), "updated_at": datetime.utcnow()}
-        await db.daily_entries.insert_one(entry)
-    return entry
-
-
 @api_router.put("/entries/{date}/calls")
 async def update_calls(date: str, calls_received: int):
     """Update calls received for a date"""
