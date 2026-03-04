@@ -10,9 +10,19 @@ import ForecastDashboard from './ForecastDashboard';
 import { GoalDisplay } from './components/GoalDisplay';
 import { useRealtimePolling } from './hooks/use-realtime-polling';
 import StatsDashboard from './StatsDashboard';
+import Settings from './settings';
 
-const API_URL = process.env.REACT_APP_BACKEND_URL;
+const API_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
 const API = `${API_URL}/api`;
+
+// Helper to get current auth headers
+const getAuthHeaders = () => {
+  const token = localStorage.getItem('access_token');
+  return {
+    'Content-Type': 'application/json',
+    ...(token && { 'Authorization': `Bearer ${token}` }),
+  };
+};
 
 // =============================================================================
 // COMPONENTS
@@ -107,13 +117,55 @@ const WorkTimer = ({ timerStart, onStart, onStop, lastBookingTime, onTimeCalcula
   useEffect(() => {
     if (timerStart) {
       setIsRunning(true);
-      const start = new Date(timerStart).getTime();
+      
+      // Parse the timer start time - handle both string and Date objects
+      let startTime;
+      console.log('Timer start value:', timerStart, 'Type:', typeof timerStart);
+      
+      if (typeof timerStart === 'string') {
+        // Parse ISO string, handling UTC time
+        const date = new Date(timerStart);
+        if (timerStart.includes('Z')) {
+          // Already has UTC indicator
+          startTime = date.getTime();
+        } else {
+          // Assume UTC if no timezone indicator
+          startTime = Date.UTC(
+            date.getUTCFullYear(),
+            date.getUTCMonth(),
+            date.getUTCDate(),
+            date.getUTCHours(),
+            date.getUTCMinutes(),
+            date.getUTCSeconds(),
+            date.getUTCMilliseconds()
+          );
+        }
+        console.log('Parsed string to time:', startTime, 'Is valid:', !isNaN(startTime), 'Date object:', date);
+      } else if (timerStart instanceof Date) {
+        startTime = timerStart.getTime();
+        console.log('Date object to time:', startTime);
+      } else {
+        console.log('Unknown timer format, using current time');
+        startTime = Date.now(); // Fallback to current time
+      }
+      
+      // If startTime is invalid (NaN), use current time
+      if (isNaN(startTime)) {
+        console.log('Invalid start time, using current time');
+        startTime = Date.now();
+      }
+      
+      console.log('Final start time:', startTime, 'Current time:', Date.now(), 'Difference:', Date.now() - startTime);
+      
       const interval = setInterval(() => {
         const now = Date.now();
-        setElapsed(Math.floor((now - start) / 1000));
+        const elapsedSeconds = Math.floor((now - startTime) / 1000);
+        console.log('Timer update:', elapsedSeconds, 'seconds');
+        setElapsed(elapsedSeconds);
       }, 1000);
       return () => clearInterval(interval);
     } else {
+      console.log('Timer stopped or not started');
       setIsRunning(false);
       setElapsed(0);
     }
@@ -129,9 +181,25 @@ const WorkTimer = ({ timerStart, onStart, onStop, lastBookingTime, onTimeCalcula
   const handleStart = async () => {
     // Prevent multiple clicks while timer is starting
     if (isRunning) {
+      toast.error('Timer is already running');
       return;
     }
-    await onStart();
+    
+    // Show loading state
+    setIsRunning(true);
+    
+    try {
+      await onStart();
+      // Timer will update from backend response
+    } catch (error) {
+      // If error is "Timer already running", that's actually correct behavior
+      // Just reset the running state
+      setIsRunning(false);
+      // Don't show error toast for "already running" - that's expected
+      if (!error.message?.includes('already running')) {
+        toast.error(error.message || 'Failed to start timer');
+      }
+    }
   };
   
   const handleStop = async () => {
@@ -274,9 +342,9 @@ function App() {
   const fetchData = useCallback(async () => {
     try {
       const [todayRes, settingsRes, entryRes] = await Promise.all([
-        axios.get(`${API}/stats/today`),
-        axios.get(`${API}/settings`),
-        axios.get(`${API}/entries/today`),
+        axios.get(`${API}/stats/today`, { headers: getAuthHeaders() }),
+        axios.get(`${API}/settings`, { headers: getAuthHeaders() }),
+        axios.get(`${API}/entries/today`, { headers: getAuthHeaders() }),
       ]);
       setTodayStats(todayRes.data);
       setSettings(settingsRes.data);
@@ -287,8 +355,8 @@ function App() {
       // Try to fetch pro stats (will 403 if free)
       try {
         const [weekRes, periodRes] = await Promise.all([
-          axios.get(`${API}/stats/week`),
-          axios.get(`${API}/stats/period`),
+          axios.get(`${API}/stats/week`, { headers: getAuthHeaders() }),
+          axios.get(`${API}/stats/period`, { headers: getAuthHeaders() }),
         ]);
         setWeekStats(weekRes.data);
         setPeriodStats(periodRes.data);
@@ -300,8 +368,8 @@ function App() {
       if (settingsRes.data?.user_plan && ['individual', 'pro', 'group'].includes(settingsRes.data.user_plan)) {
         try {
           const [forecastRes, signalsRes] = await Promise.all([
-            axios.get(`${API}/team/forecast`),
-            axios.get(`${API}/team/top-signals`),
+            axios.get(`${API}/team/forecast`, { headers: getAuthHeaders() }),
+            axios.get(`${API}/team/top-signals`, { headers: getAuthHeaders() }),
           ]);
           setTeamForecast(forecastRes.data);
           setTopSignals(signalsRes.data.signals || []);
@@ -320,10 +388,24 @@ function App() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  // Listen for kpi_updated events to refresh data
+  useEffect(() => {
+    const handleKpiUpdated = () => {
+      console.log('kpi_updated event received, refreshing data...');
+      fetchData();
+    };
+
+    window.addEventListener('kpi_updated', handleKpiUpdated);
+    
+    return () => {
+      window.removeEventListener('kpi_updated', handleKpiUpdated);
+    };
+  }, [fetchData]);
   
   const updateCalls = async () => {
     try {
-      await axios.put(`${API}/entries/${today}/calls?calls_received=${parseInt(callsInput) || 0}`);
+      await axios.put(`${API}/entries/${today}/calls?calls_received=${parseInt(callsInput) || 0}`, null, { headers: getAuthHeaders() });
       toast.success('Calls updated!');
       fetchData();
     } catch (error) {
@@ -333,7 +415,7 @@ function App() {
   
   const startTimer = async () => {
     try {
-      await axios.post(`${API}/entries/${today}/timer/start`);
+      await axios.post(`${API}/entries/${today}/timer/start`, null, { headers: getAuthHeaders() });
       fetchData();
     } catch (error) {
       const errorMessage = error.response?.data?.detail || error.message || 'Failed to start timer';
@@ -343,7 +425,7 @@ function App() {
   
   const stopTimer = async () => {
     try {
-      await axios.post(`${API}/entries/${today}/timer/stop`);
+      await axios.post(`${API}/entries/${today}/timer/stop`, null, { headers: getAuthHeaders() });
       fetchData();
     } catch (error) {
       toast.error('Failed to stop timer');
@@ -367,11 +449,11 @@ function App() {
         is_prepaid: isPrepaid,
         has_refund_protection: hasRefundProtection,
         time_since_last: timeValue,
-      });
+      }, { headers: getAuthHeaders() });
       
       // Restart timer for next booking
       if (todayEntry?.work_timer_start) {
-        await axios.post(`${API}/entries/${today}/timer/start`);
+        await axios.post(`${API}/entries/${today}/timer/start`, null, { headers: getAuthHeaders() });
       }
       
       toast.success('Booking added!');
@@ -381,6 +463,8 @@ function App() {
       setTimeSinceLast('');
       setModal(null);
       fetchData();
+      // Dispatch event for real-time updates
+      window.dispatchEvent(new Event('kpi_updated'));
     } catch (error) {
       toast.error('Failed to add booking');
     }
@@ -394,12 +478,14 @@ function App() {
         amount: parseFloat(spinAmount),
         is_mega: isMegaSpin,
         booking_number: prepaidCount,
-      });
+      }, { headers: getAuthHeaders() });
       toast.success('Spin added!');
       setSpinAmount('');
       setIsMegaSpin(false);
       setModal(null);
       fetchData();
+      // Dispatch event for real-time updates
+      window.dispatchEvent(new Event('kpi_updated'));
     } catch (error) {
       toast.error('Failed to add spin');
     }
@@ -411,12 +497,14 @@ function App() {
       await axios.post(`${API}/entries/${today}/misc`, {
         amount: parseFloat(miscAmount),
         source: miscSource,
-      });
+      }, { headers: getAuthHeaders() });
       toast.success('Misc income added!');
       setMiscAmount('');
       setMiscSource('request_lead');
       setModal(null);
       fetchData();
+      // Dispatch event for real-time updates
+      window.dispatchEvent(new Event('kpi_updated'));
     } catch (error) {
       toast.error('Failed to add misc income');
     }
@@ -424,10 +512,12 @@ function App() {
   
   const updatePesoRate = async () => {
     try {
-      await axios.put(`${API}/settings`, { peso_rate: parseFloat(pesoRateInput) });
+      await axios.put(`${API}/settings`, { peso_rate: parseFloat(pesoRateInput) }, { headers: getAuthHeaders() });
       toast.success('Peso rate updated!');
       setSettingsModal(false);
       fetchData();
+      // Dispatch event for real-time updates
+      window.dispatchEvent(new Event('kpi_updated'));
     } catch (error) {
       toast.error('Failed to update peso rate');
     }
@@ -436,7 +526,7 @@ function App() {
   const togglePlan = async () => {
     const newPlan = isPro ? 'free' : 'pro';
     try {
-      await axios.put(`${API}/settings`, { user_plan: newPlan });
+      await axios.put(`${API}/settings`, { user_plan: newPlan }, { headers: getAuthHeaders() });
       toast.success(`Switched to ${newPlan.toUpperCase()} plan`);
       fetchData();
     } catch (error) {
@@ -455,7 +545,7 @@ function App() {
   const deleteBooking = async (bookingId) => {
     if (!window.confirm('Delete this booking?')) return;
     try {
-      await axios.delete(`${API}/entries/${today}/bookings/${bookingId}`);
+      await axios.delete(`${API}/entries/${today}/bookings/${bookingId}`, { headers: getAuthHeaders() });
       toast.success('Booking deleted');
       fetchData();
     } catch (error) {
@@ -480,7 +570,7 @@ function App() {
         is_prepaid: isPrepaid,
         has_refund_protection: hasRefundProtection,
         time_since_last: parseInt(timeSinceLast) || 0,
-      });
+      }, { headers: getAuthHeaders() });
       toast.success('Booking updated!');
       setBookingProfit('');
       setIsPrepaid(false);
@@ -961,40 +1051,18 @@ function App() {
       
       {/* Settings Modal */}
       <Modal isOpen={settingsModal} onClose={() => setSettingsModal(false)} title="Settings">
-        <Input
-          label="Peso Conversion Rate (MXN per USD)"
-          type="number"
-          step="0.01"
-          placeholder="17.50"
-          value={pesoRateInput}
-          onChange={(e) => setPesoRateInput(e.target.value)}
+        <Settings 
+          goals={settings?.goals || {}} 
+          setGoals={(newGoals) => {
+            setSettings(prev => ({ ...prev, goals: newGoals }));
+          }}
+          onSettingsChange={(data) => {
+            setSettings(prev => ({
+              ...prev,
+              peso_rate: data?.conversion?.exchange_rate || prev?.peso_rate
+            }));
+          }}
         />
-        <button
-          onClick={updatePesoRate}
-          className="w-full bg-orange-500 hover:bg-orange-600 text-white py-3 rounded-xl font-semibold mb-4"
-        >
-          Save Peso Rate
-        </button>
-        
-        <div className="border-t border-zinc-800 pt-4">
-          <h4 className="text-sm font-semibold text-zinc-400 mb-3">Plan</h4>
-          <div className="flex items-center justify-between bg-zinc-800 rounded-lg p-3">
-            <div>
-              <p className="font-semibold">{isPro ? 'Pro Plan' : 'Free Plan'}</p>
-              <p className="text-xs text-zinc-500">
-                {isPro ? 'Full access to all features' : 'Basic daily tracking only'}
-              </p>
-            </div>
-            <button
-              onClick={togglePlan}
-              className={`px-4 py-2 rounded-lg font-semibold ${
-                isPro ? 'bg-zinc-700 text-zinc-300' : 'bg-amber-500 text-black'
-              }`}
-            >
-              {isPro ? 'Downgrade' : 'Upgrade'}
-            </button>
-          </div>
-        </div>
       </Modal>
     </div>
   );

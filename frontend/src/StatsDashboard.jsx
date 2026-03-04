@@ -4,8 +4,17 @@ import { Toaster, toast } from 'sonner';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import DashboardLayout from './components/DashboardLayout';
 
-const API_URL = process.env.REACT_APP_BACKEND_URL;
+const API_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
 const API = `${API_URL}/api`;
+
+// Helper to get current auth headers
+const getAuthHeaders = () => {
+  const token = localStorage.getItem('access_token');
+  return {
+    'Content-Type': 'application/json',
+    ...(token && { 'Authorization': `Bearer ${token}` }),
+  };
+};
 
 function StatsDashboard({ onBack }) {
   const [loading, setLoading] = useState(true);
@@ -14,7 +23,7 @@ function StatsDashboard({ onBack }) {
   useEffect(() => {
     const fetchSettings = async () => {
       try {
-        const res = await axios.get(`${API}/settings`);
+        const res = await axios.get(`${API}/settings`, { headers: getAuthHeaders() });
         setUserId(res.data.user_id);
       } catch (error) {
         console.error('Error fetching settings:', error);

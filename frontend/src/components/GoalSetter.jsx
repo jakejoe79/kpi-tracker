@@ -27,18 +27,19 @@ export function GoalSetter({ userId, onTargetsUpdated }) {
 
   const fetchCurrentTargets = async () => {
     try {
-      const response = await fetch('/api/goals/targets', {
+      const API_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
+      const response = await fetch(`${API_URL}/api/goals`, {
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${localStorage.getItem('access_token')}`
         }
       });
       
       if (response.ok) {
         const data = await response.json();
         setTargets({
-          daily_target: data.daily_target || 72.08,
-          weekly_target: data.weekly_target || 504.56,
-          biweekly_target: data.biweekly_target || 1009.12,
+          daily_target: data.profit_daily || 72.08,
+          weekly_target: data.profit_weekly || 504.56,
+          biweekly_target: data.profit_biweekly || 1009.12,
         });
       }
     } catch (err) {
@@ -76,13 +77,18 @@ export function GoalSetter({ userId, onTargetsUpdated }) {
     setSuccess(false);
 
     try {
-      const response = await fetch('/api/goals/targets', {
-        method: 'POST',
+      const API_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
+      const response = await fetch(`${API_URL}/api/goals`, {
+        method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${localStorage.getItem('access_token')}`
         },
-        body: JSON.stringify(targets)
+        body: JSON.stringify({
+          profit_daily: targets.daily_target,
+          profit_weekly: targets.weekly_target,
+          profit_biweekly: targets.biweekly_target
+        })
       });
 
       if (!response.ok) {

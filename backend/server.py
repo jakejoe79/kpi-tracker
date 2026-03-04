@@ -1575,226 +1575,14 @@ async def get_settings():
 async def get_goals():
     return await get_user_goals(CURRENT_USER_ID)
 
-
-@api_router.put("/settings")
-async def update_settings(settings_data: dict):
-    """Update user settings - BUG FIX #2: Settings persistence"""
+@api_router.put("/goals")
+async def update_goals(goals: dict):
+    """Update user goals"""
     try:
-        # BUG FIX #2: Persist peso_rate to backend
-        if "peso_rate" in settings_data:
-            peso_rate = settings_data["peso_rate"]
-            if peso_rate <= 0:
-                raise HTTPException(status_code=400, detail="Peso rate must be positive")
-            
-            await db.user_settings.update_one(
-                {"user_id": CURRENT_USER_ID},
-                {
-                    "$set": {
-                        "peso_rate": peso_rate,
-                        "updated_at": datetime.utcnow()
-                    }
-                },
-                upsert=True
-            )
-        
-        # Handle other settings
-        if "user_plan" in settings_data:
-            await db.users.update_one(
-                {"id": CURRENT_USER_ID},
-                {"$set": {"plan": settings_data["user_plan"]}}
-            )
-        
-        return {"success": True, "message": "Settings updated"}
-    except HTTPException:
-        raise
+        await update_user_goals(CURRENT_USER_ID, goals)
+        return await get_user_goals(CURRENT_USER_ID)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@api_router.post("/goals")
-async def create_goal(goal_data: dict):
-    """Create a new user goal - BUG FIX #3: Goal management"""
-    try:
-        # Validate goal data
-        if "goalType" not in goal_data or "targetValue" not in goal_data:
-            raise HTTPException(status_code=400, detail="goalType and targetValue are required")
-        
-        goal_id = str(uuid.uuid4())
-        goal = {
-            "id": goal_id,
-            "user_id": CURRENT_USER_ID,
-            "goalType": goal_data["goalType"],
-            "targetValue": goal_data["targetValue"],
-            "createdAt": datetime.utcnow(),
-            "updatedAt": datetime.utcnow()
-        }
-        
-        await db.user_goals.insert_one(goal)
-        return goal
-    except HTTPException:
-        raise
-
-
-@api_router.put("/goals/{goal_id}")
-async def update_goal(goal_id: str, goal_data: dict):
-    """Update a goal - BUG FIX #4, #5: Independent daily goal editing and synchronization"""
-    try:
-        if "targetValue" not in goal_data:
-            raise HTTPException(status_code=400, detail="targetValue is required")
-        
-        result = await db.user_goals.update_one(
-            {"id": goal_id, "user_id": CURRENT_USER_ID},
-            {
-                "$set": {
-                    "targetValue": goal_data["targetValue"],
-                    "updated_at": datetime.utcnow()
-                }
-            }
-        )
-        
-        if result.matched_count == 0:
-            raise HTTPException(status_code=404, detail="Goal not found")
-        
-        return await db.user_goals.find_one({"id": goal_id, "user_id": CURRENT_USER_ID})
-    except HTTPException:
-        raise
-
-
-@api_router.delete("/goals/{goal_id}")
-async def delete_goal(goal_id: str):
-    """Delete a goal"""
-    try:
-        result = await db.user_goals.delete_one({"id": goal_id, "user_id": CURRENT_USER_ID})
-        
-        if result.deleted_count == 0:
-            raise HTTPException(status_code=404, detail="Goal not found")
-        
-        return {"success": True, "message": "Goal deleted"}
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error creating goal: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to create goal")
-
-
-@api_router.put("/goals/{goal_id}")
-async def update_goal(goal_id: str, goal_data: dict):
-    """Update a user goal"""
-    try:
-        # Validate goal data
-        if "targetValue" not in goal_data:
-            raise HTTPException(status_code=400, detail="targetValue is required")
-        
-        result = await db.user_goals.update_one(
-            {"id": goal_id, "user_id": CURRENT_USER_ID},
-            {
-                "$set": {
-                    "targetValue": goal_data["targetValue"],
-                    "updatedAt": datetime.utcnow()
-                }
-            }
-        )
-        
-        if result.matched_count == 0:
-            raise HTTPException(status_code=404, detail="Goal not found")
-        
-        updated_goal = await db.user_goals.find_one({"id": goal_id, "user_id": CURRENT_USER_ID})
-        return updated_goal
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error updating goal: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to update goal")
-
-
-@api_router.delete("/goals/{goal_id}")
-async def delete_goal(goal_id: str):
-    """Delete a user goal"""
-    try:
-        result = await db.user_goals.delete_one({"id": goal_id, "user_id": CURRENT_USER_ID})
-        
-        if result.deleted_count == 0:
-            raise HTTPException(status_code=404, detail="Goal not found")
-        
-        return {"message": "Goal deleted successfully"}
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error deleting goal: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to delete goal")
-
-
-# DYNAMIC GOAL RECALCULATION ENDPOINTS
-from services.goals_api import (
-    get_current_goals,
-    get_goals_history,
-    set_profit_targets,
-    get_daily_metrics
-)
-
-@api_router.get("/goals/current")
-async def get_current_goals_endpoint():
-    """Get current goals for all periods with progress and time remaining"""
-    try:
-        goals = await get_current_goals(db, CURRENT_USER_ID)
-        return goals
-    except Exception as e:
-        logger.error(f"Error getting current goals: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to get current goals")
-
-
-@api_router.get("/goals/history")
-async def get_goals_history_endpoint(start_date: str, end_date: str):
-    """Get historical goals for a date range"""
-    try:
-        history = await get_goals_history(db, CURRENT_USER_ID, start_date, end_date)
-        return {"goals": history}
-    except Exception as e:
-        logger.error(f"Error getting goals history: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to get goals history")
-
-
-@api_router.post("/goals/targets")
-async def set_profit_targets_endpoint(targets: dict):
-    """Set profit targets for daily, weekly, biweekly periods"""
-    try:
-        if "daily_target" not in targets or "weekly_target" not in targets or "biweekly_target" not in targets:
-            raise HTTPException(status_code=400, detail="daily_target, weekly_target, and biweekly_target are required")
-        
-        success = await set_profit_targets(
-            db,
-            CURRENT_USER_ID,
-            targets["daily_target"],
-            targets["weekly_target"],
-            targets["biweekly_target"]
-        )
-        
-        if success:
-            return {"message": "Profit targets updated successfully"}
-        else:
-            raise HTTPException(status_code=500, detail="Failed to update profit targets")
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error setting profit targets: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to set profit targets")
-
-
-@api_router.get("/metrics/daily")
-async def get_daily_metrics_endpoint(date: str):
-    """Get daily metrics for a specific date"""
-    try:
-        metrics = await get_daily_metrics(db, CURRENT_USER_ID, date)
-        if metrics:
-            return metrics
-        else:
-            raise HTTPException(status_code=404, detail="Metrics not found for the specified date")
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error getting daily metrics: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to get daily metrics")
-
+        raise HTTPException(status_code=500, detail=f"Error updating goals: {str(e)}")
 
 # TEAM FORECAST - Multi-user safe
 @api_router.get("/team/forecast", response_model=TeamForecast)
@@ -2333,44 +2121,6 @@ async def get_settings():
     return {"user_id": CURRENT_USER_ID, "user_plan": settings.get("user_plan", CURRENT_USER_PLAN), "peso_rate": settings.get("peso_rate", 17.50), "goals": settings.get("goals", await get_user_goals(CURRENT_USER_ID))}
 
 
-@api_router.put("/settings")
-async def update_settings(settings_data: dict):
-    """Update user settings (peso_rate, user_plan, goals)"""
-    try:
-        # Validate peso_rate if provided
-        if "peso_rate" in settings_data:
-            peso_rate = settings_data["peso_rate"]
-            if not isinstance(peso_rate, (int, float)) or peso_rate <= 0:
-                raise HTTPException(status_code=400, detail="Peso rate must be a positive number")
-        
-        # Update settings in database
-        result = await db.user_settings.update_one(
-            {"user_id": CURRENT_USER_ID},
-            {
-                "$set": {
-                    **settings_data,
-                    "user_id": CURRENT_USER_ID,
-                    "updated_at": datetime.utcnow()
-                }
-            },
-            upsert=True
-        )
-        
-        # Return updated settings
-        updated_settings = await db.user_settings.find_one({"user_id": CURRENT_USER_ID})
-        return {
-            "user_id": CURRENT_USER_ID,
-            "user_plan": updated_settings.get("user_plan", CURRENT_USER_PLAN),
-            "peso_rate": updated_settings.get("peso_rate", 17.50),
-            "goals": updated_settings.get("goals", await get_user_goals(CURRENT_USER_ID))
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error updating settings: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to update settings")
-
-
 @api_router.get("/entries/today")
 async def get_today_entry():
     """Get today's daily entry"""
@@ -2397,56 +2147,17 @@ async def update_calls(date: str, calls_received: int):
 
 @api_router.post("/entries/{date}/timer/start")
 async def start_timer(date: str):
-    """Start work timer with state validation to prevent multiple starts"""
+    """Start work timer"""
     try:
         datetime.fromisoformat(date)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
-    
-    try:
-        _, _, period_id = get_current_period()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error getting period: {str(e)}")
-    
-    try:
-        # First check if entry exists and timer is already running
-        entry = await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
-        if entry and entry.get("work_timer_start"):
-            raise HTTPException(status_code=400, detail="Timer already running")
-        
-        # If entry doesn't exist, create it with timer started
-        if not entry:
-            await db.daily_entries.insert_one({
-                "id": str(uuid.uuid4()),
-                "user_id": CURRENT_USER_ID,
-                "date": date,
-                "period_id": period_id,
-                "calls_received": 0,
-                "bookings": [],
-                "spins": [],
-                "misc_income": [],
-                "work_timer_start": datetime.utcnow().isoformat(),
-                "created_at": datetime.utcnow(),
-                "updated_at": datetime.utcnow()
-            })
-        else:
-            # Entry exists, update timer
-            await db.daily_entries.update_one(
-                {"user_id": CURRENT_USER_ID, "date": date},
-                {
-                    "$set": {
-                        "work_timer_start": datetime.utcnow().isoformat(),
-                        "updated_at": datetime.utcnow()
-                    }
-                }
-            )
-        
-        result = await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
-        return result if result else {"error": "Failed to retrieve entry"}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error starting timer: {str(e)}")
+    entry = await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
+    if entry and entry.get("work_timer_start"):
+        raise HTTPException(status_code=400, detail="Timer already running")
+    _, _, period_id = get_current_period()
+    await db.daily_entries.update_one({"user_id": CURRENT_USER_ID, "date": date}, {"$set": {"work_timer_start": datetime.utcnow().isoformat(), "updated_at": datetime.utcnow()}, "$setOnInsert": {"id": str(uuid.uuid4()), "user_id": CURRENT_USER_ID, "date": date, "period_id": period_id, "calls_received": 0, "bookings": [], "spins": [], "misc_income": [], "created_at": datetime.utcnow()}}, upsert=True)
+    return await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
 
 
 @api_router.post("/entries/{date}/timer/stop")
@@ -2482,19 +2193,11 @@ async def add_booking(date: str, booking: BookingCreate):
 
 @api_router.post("/entries/{date}/spins")
 async def add_spin(date: str, spin: SpinCreate):
-    """Add a spin with prepaid booking validation"""
+    """Add a spin"""
     try:
         datetime.fromisoformat(date)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
-    
-    # Validate prepaid booking count
-    entries = await db.daily_entries.find({"user_id": CURRENT_USER_ID}).to_list(1000)
-    prepaid_count = sum(len([b for b in e.get("bookings", []) if b.get("is_prepaid")]) for e in entries)
-    
-    if prepaid_count < 4:
-        raise HTTPException(status_code=400, detail="You need 4 prepaid bookings to add a spin")
-    
     _, _, period_id = get_current_period()
     spin_dict = spin.dict()
     spin_dict["id"] = str(uuid.uuid4())
@@ -2505,16 +2208,11 @@ async def add_spin(date: str, spin: SpinCreate):
 
 @api_router.post("/entries/{date}/misc")
 async def add_misc_income(date: str, misc: MiscIncomeCreate):
-    """Add miscellaneous income with source validation"""
+    """Add miscellaneous income"""
     try:
         datetime.fromisoformat(date)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
-    
-    # Validate source field
-    if not misc.source or len(misc.source.strip()) < 3:
-        raise HTTPException(status_code=400, detail="Source must be at least 3 characters")
-    
     _, _, period_id = get_current_period()
     misc_dict = misc.dict()
     misc_dict["id"] = str(uuid.uuid4())
@@ -2525,7 +2223,7 @@ async def add_misc_income(date: str, misc: MiscIncomeCreate):
 
 @api_router.delete("/entries/{date}/bookings/{booking_id}")
 async def delete_booking(date: str, booking_id: str):
-    """Delete a booking with audit trail logging"""
+    """Delete a booking"""
     try:
         datetime.fromisoformat(date)
     except ValueError:
@@ -2533,45 +2231,18 @@ async def delete_booking(date: str, booking_id: str):
     entry = await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
     if not entry:
         raise HTTPException(status_code=404, detail="Entry not found")
-    
-    booking_to_delete = next((b for b in entry.get("bookings", []) if b.get("id") == booking_id), None)
-    if not booking_to_delete:
+    if not any(b.get("id") == booking_id for b in entry.get("bookings", [])):
         raise HTTPException(status_code=404, detail="Booking not found")
-    
-    # Create audit log entry before deletion
-    audit_log = {
-        "id": str(uuid.uuid4()),
-        "user_id": CURRENT_USER_ID,
-        "action": "DELETE_BOOKING",
-        "entityType": "booking",
-        "entityId": booking_id,
-        "details": {
-            "date": date,
-            "booking": booking_to_delete,
-            "deletedAt": datetime.utcnow().isoformat()
-        },
-        "timestamp": datetime.utcnow()
-    }
-    await db.audit_logs.insert_one(audit_log)
-    
-    # Delete the booking
-    await db.daily_entries.update_one(
-        {"user_id": CURRENT_USER_ID, "date": date},
-        {"$pull": {"bookings": {"id": booking_id}}, "$set": {"updated_at": datetime.utcnow()}}
-    )
+    await db.daily_entries.update_one({"user_id": CURRENT_USER_ID, "date": date}, {"$pull": {"bookings": {"id": booking_id}}, "$set": {"updated_at": datetime.utcnow()}})
     return await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
 
 @api_router.put("/entries/{date}/bookings/{booking_id}")
 async def update_booking(date: str, booking_id: str, booking_update: BookingCreate):
-    """Update a booking with profit validation - BUG FIX #6"""
+    """Update a booking"""
     try:
         datetime.fromisoformat(date)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
-
-    # BUG FIX #6: Validate profit value (must be positive and within range)
-    if booking_update.profit <= 0 or booking_update.profit > 10000:
-        raise HTTPException(status_code=400, detail="Profit must be positive and not exceed 10000")
 
     entry = await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
     if not entry:

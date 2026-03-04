@@ -5,6 +5,7 @@ import ProgressBars from './ProgressBars';
 import TimeRemainingWidget from './TimeRemainingWidget';
 import LiveStatsPanel from './LiveStatsPanel';
 import QuickActionsBar from './QuickActionsBar';
+import TimerWidget from './TimerWidget';
 
 /**
  * Main dashboard layout component
@@ -38,7 +39,7 @@ function DashboardLayout({ userId }) {
         setLoading(true);
         const token = localStorage.getItem('access_token');
         const response = await fetch(
-          `${process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000'}/goals/current`,
+          `${process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000'}/api/goals`,
           {
             headers: {
               'Authorization': `Bearer ${token}`,
@@ -93,6 +94,7 @@ function DashboardLayout({ userId }) {
 
           {/* Time and Stats Panel */}
           <div className="dashboard-panel stats-panel">
+            <TimerWidget />
             <TimeRemainingWidget data={dashboardData?.daily} />
             <LiveStatsPanel data={dashboardData?.daily} />
           </div>

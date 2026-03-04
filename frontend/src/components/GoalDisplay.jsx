@@ -25,9 +25,10 @@ export function GoalDisplay({ userId }) {
 
   const fetchCurrentGoals = async () => {
     try {
-      const response = await fetch('/api/goals/current', {
+      const API_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
+      const response = await fetch(`${API_URL}/api/goals`, {
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${localStorage.getItem('access_token')}`
         }
       });
       
@@ -212,6 +213,27 @@ export function GoalDisplay({ userId }) {
         <AlertCircle className="h-4 w-4" />
         <AlertDescription>Error loading goals: {error}</AlertDescription>
       </Alert>
+    );
+  }
+
+  // If no goals data at all
+  if (!goals) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Goals</CardTitle>
+          <CardDescription>
+            No goals set yet. Please set your profit targets.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="text-center text-gray-500">
+            <Target className="h-12 w-12 mx-auto mb-4 text-gray-400" />
+            <p className="mb-2">No goals configured</p>
+            <p className="text-sm">Set up your daily, weekly, and biweekly targets to track progress.</p>
+          </div>
+        </CardContent>
+      </Card>
     );
   }
 

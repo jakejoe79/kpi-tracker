@@ -1,4 +1,5 @@
-const API = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
+const API_BASE = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
+const API = `${API_BASE}/api`;
 
 const apiCall = async (endpoint, options = {}) => {
   const token = localStorage.getItem('access_token');
@@ -11,7 +12,7 @@ const apiCall = async (endpoint, options = {}) => {
     },
   });
   if (res.status === 401) {
-    localStorage.removeItem('tokens');
+    localStorage.removeItem('access_token');
     window.location.href = '/login';
   }
   return res.json();

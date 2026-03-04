@@ -93,10 +93,6 @@ function Settings({ goals, setGoals, onSettingsChange }) {
     const previousConversion = { ...conversion };
     
     try {
-      // Save to localStorage for immediate UI update
-      localStorage.setItem('kpi_goals', JSON.stringify(goals));
-      localStorage.setItem('kpi_conversion', JSON.stringify(conversion));
-      
       // Prepare all settings for backend in one call
       const settingsToSave = {
         peso_rate: conversion.exchange_rate,  // Map exchange_rate to peso_rate for backend
@@ -106,13 +102,34 @@ function Settings({ goals, setGoals, onSettingsChange }) {
       };
       
       // Call backend API to save all settings at once
-      await updateSettings(settingsToSave);
+      const result = await updateSettings(settingsToSave);
+      
+      // Save to localStorage with the NEW value from backend
+      localStorage.setItem('kpi_goals', JSON.stringify(result.goals));
+      localStorage.setItem('kpi_conversion', JSON.stringify({
+        exchange_rate: result.peso_rate,
+        processing_fee_percent: result.processing_fee_percent,
+        period_fee: result.period_fee
+      }));
+      
+      // Update state from backend response to ensure sync
+      setConversion(prev => ({
+        ...prev,
+        exchange_rate: result.peso_rate,
+        processing_fee_percent: result.processing_fee_percent,
+        period_fee: result.period_fee
+      }));
+      setGoals(result.goals);
       
       // Show success toast
       createSuccessToast('Settings saved successfully!');
       
       // Update UI state
-      if (onSettingsChange) onSettingsChange({ goals, conversion });
+      if (onSettingsChange) onSettingsChange({ goals: result.goals, conversion: {
+        exchange_rate: result.peso_rate,
+        processing_fee_percent: result.processing_fee_percent,
+        period_fee: result.period_fee
+      }});
       window.dispatchEvent(new Event('kpi_updated'));
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
