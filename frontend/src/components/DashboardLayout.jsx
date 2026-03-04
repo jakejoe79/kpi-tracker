@@ -53,7 +53,20 @@ function DashboardLayout({ userId }) {
         }
 
         const data = await response.json();
-        setDashboardData(data);
+        // Map goals data to expected structure
+        setDashboardData({
+          daily: {
+            profit_target: data.profit_daily || 0,
+            current_profit: 0,
+            progress_percent: 0,
+            time_remaining_minutes: 0,
+            time_needed_minutes: 0,
+            calls_needed: data.calls_daily || 0,
+            current_calls: 0,
+            reservations_needed: data.reservations_daily || 0,
+            current_reservations: 0,
+          }
+        });
         setError(null);
       } catch (err) {
         setError(err.message);

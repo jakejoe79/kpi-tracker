@@ -112,15 +112,11 @@ const EarningsCard = ({ title, usd, pesos, pesoRate, showPesos = true }) => (
 
 const WorkTimer = ({ timerStart, onStart, onStop, lastBookingTime, onTimeCalculated }) => {
   const [elapsed, setElapsed] = useState(0);
-  const [isRunning, setIsRunning] = useState(false);
   
   useEffect(() => {
     if (timerStart) {
-      setIsRunning(true);
-      
       // Parse the timer start time - handle both string and Date objects
       let startTime;
-      console.log('Timer start value:', timerStart, 'Type:', typeof timerStart);
       
       if (typeof timerStart === 'string') {
         // Parse ISO string, handling UTC time
@@ -140,33 +136,24 @@ const WorkTimer = ({ timerStart, onStart, onStop, lastBookingTime, onTimeCalcula
             date.getUTCMilliseconds()
           );
         }
-        console.log('Parsed string to time:', startTime, 'Is valid:', !isNaN(startTime), 'Date object:', date);
       } else if (timerStart instanceof Date) {
         startTime = timerStart.getTime();
-        console.log('Date object to time:', startTime);
       } else {
-        console.log('Unknown timer format, using current time');
         startTime = Date.now(); // Fallback to current time
       }
       
       // If startTime is invalid (NaN), use current time
       if (isNaN(startTime)) {
-        console.log('Invalid start time, using current time');
         startTime = Date.now();
       }
-      
-      console.log('Final start time:', startTime, 'Current time:', Date.now(), 'Difference:', Date.now() - startTime);
       
       const interval = setInterval(() => {
         const now = Date.now();
         const elapsedSeconds = Math.floor((now - startTime) / 1000);
-        console.log('Timer update:', elapsedSeconds, 'seconds');
         setElapsed(elapsedSeconds);
       }, 1000);
       return () => clearInterval(interval);
     } else {
-      console.log('Timer stopped or not started');
-      setIsRunning(false);
       setElapsed(0);
     }
   }, [timerStart]);
@@ -179,26 +166,12 @@ const WorkTimer = ({ timerStart, onStart, onStop, lastBookingTime, onTimeCalcula
   };
   
   const handleStart = async () => {
-    // Prevent multiple clicks while timer is starting
-    if (isRunning) {
-      toast.error('Timer is already running');
-      return;
-    }
-    
-    // Show loading state
-    setIsRunning(true);
-    
     try {
       await onStart();
-      // Timer will update from backend response
+      // Timer will update from backend response via fetchData
     } catch (error) {
-      // If error is "Timer already running", that's actually correct behavior
-      // Just reset the running state
-      setIsRunning(false);
-      // Don't show error toast for "already running" - that's expected
-      if (!error.message?.includes('already running')) {
-        toast.error(error.message || 'Failed to start timer');
-      }
+      const errorMessage = error.response?.data?.detail || error.message || 'Failed to start timer';
+      toast.error(errorMessage);
     }
   };
   
@@ -213,7 +186,7 @@ const WorkTimer = ({ timerStart, onStart, onStop, lastBookingTime, onTimeCalcula
           <Clock size={18} className="text-zinc-500" />
           <span className="text-sm font-semibold text-zinc-400">Work Timer</span>
         </div>
-        {isRunning && (
+        {timerStart && (
           <span className="text-xs bg-emerald-500/20 text-emerald-400 px-2 py-1 rounded-full animate-pulse">
             RUNNING
           </span>
@@ -223,7 +196,7 @@ const WorkTimer = ({ timerStart, onStart, onStop, lastBookingTime, onTimeCalcula
         {formatTime(elapsed)}
       </div>
       <div className="flex gap-2">
-        {!isRunning ? (
+        {!timerStart ? (
           <button
             onClick={handleStart}
             className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-lg font-semibold flex items-center justify-center gap-2 transition-colors"
@@ -243,7 +216,7 @@ const WorkTimer = ({ timerStart, onStart, onStop, lastBookingTime, onTimeCalcula
           </button>
         )}
       </div>
-      {isRunning && (
+      {timerStart && (
         <p className="text-xs text-zinc-500 text-center mt-2">
           Time will auto-fill when you add a booking
         </p>
