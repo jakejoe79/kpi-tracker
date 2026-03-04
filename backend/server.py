@@ -1573,14 +1573,54 @@ async def get_settings():
 # Keep old endpoint for backward compatibility
 @api_router.get("/goals")
 async def get_goals():
-    return await get_user_goals(CURRENT_USER_ID)
+    flat_goals = await get_user_goals(CURRENT_USER_ID)
+    
+    # Convert flat structure to nested structure for frontend compatibility
+    return {
+        "profit_daily": flat_goals.get("profit_daily", 0),
+        "calls_daily": flat_goals.get("calls_daily", 0),
+        "reservations_daily": flat_goals.get("reservations_daily", 0),
+        "profit_weekly": flat_goals.get("profit_weekly", 0),
+        "calls_weekly": flat_goals.get("calls_weekly", 0),
+        "reservations_weekly": flat_goals.get("reservations_weekly", 0),
+        "profit_biweekly": flat_goals.get("profit_biweekly", 0),
+        "calls_biweekly": flat_goals.get("calls_biweekly", 0),
+        "reservations_biweekly": flat_goals.get("reservations_biweekly", 0),
+        "daily": {
+            "profit_target": flat_goals.get("profit_daily", 0),
+            "calls_needed": flat_goals.get("calls_daily", 0),
+            "reservations_needed": flat_goals.get("reservations_daily", 0),
+        },
+        "weekly": {
+            "profit_target": flat_goals.get("profit_weekly", 0),
+            "calls_needed": flat_goals.get("calls_weekly", 0),
+            "reservations_needed": flat_goals.get("reservations_weekly", 0),
+        },
+        "biweekly": {
+            "profit_target": flat_goals.get("profit_biweekly", 0),
+            "calls_needed": flat_goals.get("calls_biweekly", 0),
+            "reservations_needed": flat_goals.get("reservations_biweekly", 0),
+        },
+    }
 
 @api_router.put("/goals")
 async def update_goals(goals: dict):
     """Update user goals"""
     try:
-        await update_user_goals(CURRENT_USER_ID, goals)
-        return await get_user_goals(CURRENT_USER_ID)
+        # Extract flat structure from nested or flat input
+        flat_goals = {
+            "profit_daily": goals.get("profit_daily", goals.get("daily", {}).get("profit_target", 0)),
+            "calls_daily": goals.get("calls_daily", goals.get("daily", {}).get("calls_needed", 0)),
+            "reservations_daily": goals.get("reservations_daily", goals.get("daily", {}).get("reservations_needed", 0)),
+            "profit_weekly": goals.get("profit_weekly", goals.get("weekly", {}).get("profit_target", 0)),
+            "calls_weekly": goals.get("calls_weekly", goals.get("weekly", {}).get("calls_needed", 0)),
+            "reservations_weekly": goals.get("reservations_weekly", goals.get("weekly", {}).get("reservations_needed", 0)),
+            "profit_biweekly": goals.get("profit_biweekly", goals.get("biweekly", {}).get("profit_target", 0)),
+            "calls_biweekly": goals.get("calls_biweekly", goals.get("biweekly", {}).get("calls_needed", 0)),
+            "reservations_biweekly": goals.get("reservations_biweekly", goals.get("biweekly", {}).get("reservations_needed", 0)),
+        }
+        await update_user_goals(CURRENT_USER_ID, flat_goals)
+        return await get_goals()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error updating goals: {str(e)}")
 

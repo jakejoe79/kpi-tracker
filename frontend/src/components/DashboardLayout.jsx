@@ -57,14 +57,14 @@ function DashboardLayout({ userId }) {
         setDashboardData({
           daily: {
             profit_target: data.profit_daily || 0,
-            current_profit: 0,
-            progress_percent: 0,
-            time_remaining_minutes: 0,
-            time_needed_minutes: 0,
+            current_profit: data.current_profit || 0,
+            progress_percent: data.progress_percent || 0,
+            time_remaining_minutes: data.time_remaining_minutes || 0,
+            time_needed_minutes: data.time_needed_minutes || 0,
             calls_needed: data.calls_daily || 0,
-            current_calls: 0,
+            current_calls: data.current_calls || 0,
             reservations_needed: data.reservations_daily || 0,
-            current_reservations: 0,
+            current_reservations: data.current_reservations || 0,
           }
         });
         setError(null);
