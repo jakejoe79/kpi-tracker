@@ -10,7 +10,7 @@ import ForecastDashboard from './ForecastDashboard';
 import { GoalDisplay } from './components/GoalDisplay';
 import { useRealtimePolling } from './hooks/use-realtime-polling';
 import StatsDashboard from './StatsDashboard';
-import Settings from './settings';
+import SettingsPanel from './settings';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
 const API = `${API_URL}/api`;
@@ -1024,7 +1024,7 @@ function App() {
       
       {/* Settings Modal */}
       <Modal isOpen={settingsModal} onClose={() => setSettingsModal(false)} title="Settings">
-        <Settings 
+        <SettingsPanel 
           goals={settings?.goals || {}} 
           setGoals={(newGoals) => {
             setSettings(prev => ({ ...prev, goals: newGoals }));
