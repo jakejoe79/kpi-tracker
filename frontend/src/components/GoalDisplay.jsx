@@ -80,6 +80,18 @@ export function GoalDisplay({ userId }) {
       );
     }
 
+    // Check if required properties exist
+    if (!goalData.progress_percent || !goalData.profit_target) {
+      return (
+        <Alert>
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>
+            Invalid goals data for {periodType} period.
+          </AlertDescription>
+        </Alert>
+      );
+    }
+
     const pace = getPaceIndicator(goalData.progress_percent);
     const timeRemainingHours = goalData.time_remaining_minutes / 60;
 
