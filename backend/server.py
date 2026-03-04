@@ -46,6 +46,8 @@ import statistics
 
 from constants import SPIN_RULES, calculate_progress, is_on_track, get_status
 
+from services.goals_api import get_current_goals
+
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -2259,9 +2261,21 @@ async def delete_booking(date: str, booking_id: str):
     entry = await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
     if not entry:
         raise HTTPException(status_code=404, detail="Entry not found")
-    if not any(b.get("id") == booking_id for b in entry.get("bookings", [])):
+    
+    # Convert booking_id to string for comparison
+    booking_id_str = str(booking_id)
+    bookings = entry.get("bookings", [])
+    
+    # Find and remove the booking
+    updated_bookings = [b for b in bookings if str(b.get("id")) != booking_id_str]
+    
+    if len(updated_bookings) == len(bookings):
         raise HTTPException(status_code=404, detail="Booking not found")
-    await db.daily_entries.update_one({"user_id": CURRENT_USER_ID, "date": date}, {"$pull": {"bookings": {"id": booking_id}}, "$set": {"updated_at": datetime.utcnow()}})
+    
+    await db.daily_entries.update_one(
+        {"user_id": CURRENT_USER_ID, "date": date},
+        {"$set": {"bookings": updated_bookings, "updated_at": datetime.utcnow()}}
+    )
     return await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
 
 @api_router.put("/entries/{date}/bookings/{booking_id}")
