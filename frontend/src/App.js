@@ -214,6 +214,7 @@ function App() {
   
   // Form states
   const [bookingProfit, setBookingProfit] = useState('');
+  const [bookingTime, setBookingTime] = useState('');
   const [isPrepaid, setIsPrepaid] = useState(false);
   const [hasRefundProtection, setHasRefundProtection] = useState(false);
   const [timeSinceLast, setTimeSinceLast] = useState('');
@@ -308,16 +309,21 @@ function App() {
   const addBooking = async () => {
     if (!bookingProfit) return;
     
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    
     try {
       await axios.post(`${API}/entries/${today}/bookings`, {
         profit: parseFloat(bookingProfit),
         is_prepaid: isPrepaid,
         has_refund_protection: hasRefundProtection,
         time_since_last: parseInt(timeSinceLast) || 0,
+        booking_time: timeStr,
       }, { headers: getAuthHeaders() });
       
       toast.success('Booking added!');
       setBookingProfit('');
+      setBookingTime('');
       setIsPrepaid(false);
       setHasRefundProtection(false);
       setTimeSinceLast('');
@@ -709,9 +715,16 @@ function App() {
               {[...todayEntry.bookings].reverse().map((booking) => (
                 <div key={booking.id} className="flex items-center justify-between bg-zinc-800 rounded-lg p-3">
                   <div>
-                    <span className="text-lg font-bold text-emerald-400">
-                      ${booking.profit.toFixed(2)}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg font-bold text-emerald-400">
+                        ${booking.profit.toFixed(2)}
+                      </span>
+                      {booking.booking_time && (
+                        <span className="text-xs text-zinc-400 font-mono">
+                          {booking.booking_time}
+                        </span>
+                      )}
+                    </div>
                     <div className="flex gap-2 mt-1">
                       {booking.is_prepaid && (
                         <span className="text-xs bg-blue-500/30 text-blue-400 px-2 py-0.5 rounded">Prepaid</span>
