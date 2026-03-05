@@ -1682,6 +1682,128 @@ async def get_goals():
     }
 
 
+@api_router.get("/dashboard/goals")
+async def get_goals_dashboard():
+    """Comprehensive goals dashboard with live calculator.
+    
+    Returns all goals, current progress, and on-track status for daily/weekly/biweekly periods.
+    Uses live data from daily_entries to calculate progress.
+    """
+    today = date.today()
+    user_goals = await get_user_goals(CURRENT_USER_ID)
+    
+    # Get today's entry
+    today_entry = await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": today.isoformat()})
+    
+    # Calculate periods
+    daily_start = today
+    daily_end = today
+    
+    weekly_start = today - timedelta(days=6)
+    weekly_end = today
+    
+    biweekly_start = today - timedelta(days=13)
+    biweekly_end = today
+    
+    # Fetch entries for each period
+    daily_entries_list = await db.daily_entries.find({
+        "user_id": CURRENT_USER_ID,
+        "date": {"$gte": daily_start.isoformat(), "$lte": daily_end.isoformat()}
+    }).to_list(1000)
+    
+    weekly_entries_list = await db.daily_entries.find({
+        "user_id": CURRENT_USER_ID,
+        "date": {"$gte": weekly_start.isoformat(), "$lte": weekly_end.isoformat()}
+    }).to_list(1000)
+    
+    biweekly_entries_list = await db.daily_entries.find({
+        "user_id": CURRENT_USER_ID,
+        "date": {"$gte": biweekly_start.isoformat(), "$lte": biweekly_end.isoformat()}
+    }).to_list(1000)
+    
+    def calculate_period_progress(entries: list, period_name: str) -> dict:
+        """Calculate progress for a period."""
+        total_calls = sum(e.get("calls_received", 0) for e in entries)
+        total_bookings = sum(len(e.get("bookings", [])) for e in entries)
+        total_spins = sum(s.get("amount", 0) for booking_list in [e.get("bookings", []) for e in entries] for s in [])
+        total_profit = sum(b.get("profit", 0) for e in entries for b in e.get("bookings", []))
+        total_misc = sum(m.get("amount", 0) for e in entries for m in e.get("misc_income", []))
+        total_spins = sum(s.get("amount", 0) for e in entries for s in e.get("spins", []))
+        
+        profit_goal = user_goals.get(f"profit_{period_name}", 0)
+        calls_goal = user_goals.get(f"calls_{period_name}", 0)
+        reservations_goal = user_goals.get(f"reservations_{period_name}", 0)
+        
+        # Calculate progress percentages
+        profit_progress = (total_profit / profit_goal * 100) if profit_goal > 0 else 0
+        calls_progress = (total_calls / calls_goal * 100) if calls_goal > 0 else 0
+        reservations_progress = (total_bookings / reservations_goal * 100) if reservations_goal > 0 else 0
+        conversion_rate = (total_bookings / total_calls * 100) if total_calls > 0 else 0
+        
+        # Determine on-track status
+        profit_on_track = total_profit >= profit_goal if profit_goal > 0 else True
+        calls_on_track = total_calls >= calls_goal if calls_goal > 0 else True
+        reservations_on_track = total_bookings >= reservations_goal if reservations_goal > 0 else True
+        
+        return {
+            "profit": {
+                "current": round(total_profit, 2),
+                "goal": profit_goal,
+                "progress_percent": round(profit_progress, 1),
+                "on_track": profit_on_track,
+                "remaining": max(0, profit_goal - total_profit)
+            },
+            "calls": {
+                "current": total_calls,
+                "goal": calls_goal,
+                "progress_percent": round(calls_progress, 1),
+                "on_track": calls_on_track,
+                "remaining": max(0, calls_goal - total_calls)
+            },
+            "reservations": {
+                "current": total_bookings,
+                "goal": reservations_goal,
+                "progress_percent": round(reservations_progress, 1),
+                "on_track": reservations_on_track,
+                "remaining": max(0, reservations_goal - total_bookings)
+            },
+            "conversion_rate": round(conversion_rate, 2),
+            "earnings": {
+                "spins": round(total_spins, 2),
+                "misc": round(total_misc, 2),
+                "total": round(total_profit + total_spins + total_misc, 2)
+            },
+            "entries_count": len(entries)
+        }
+    
+    # Calculate progress for all periods
+    daily_progress = calculate_period_progress(daily_entries_list, "daily")
+    weekly_progress = calculate_period_progress(weekly_entries_list, "weekly")
+    biweekly_progress = calculate_period_progress(biweekly_entries_list, "biweekly")
+    
+    # Overall on-track status
+    all_on_track = (
+        daily_progress["profit"]["on_track"] and
+        daily_progress["calls"]["on_track"] and
+        daily_progress["reservations"]["on_track"]
+    )
+    
+    return {
+        "date": today.isoformat(),
+        "user_id": CURRENT_USER_ID,
+        "peso_rate": user_goals.get("peso_rate", 17.50),
+        "overall_status": "on_track" if all_on_track else "behind",
+        "daily": daily_progress,
+        "weekly": weekly_progress,
+        "biweekly": biweekly_progress,
+        "goals": {
+            "daily": user_goals.get("profit_daily", 0),
+            "weekly": user_goals.get("profit_weekly", 0),
+            "biweekly": user_goals.get("profit_biweekly", 0)
+        }
+    }
+
+
 @api_router.get("/current-goals")
 async def get_current_goals_endpoint():
     """Get current goals with live progress"""
@@ -1706,6 +1828,44 @@ async def update_goals(goals: dict):
         await update_user_goals(CURRENT_USER_ID, flat_goals)
         return await get_goals()
     except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error updating goals: {str(e)}")
+
+
+@api_router.put("/dashboard/goals")
+async def update_dashboard_goals(goals_update: dict):
+    """Update goals from dashboard with validation.
+    
+    Accepts: {"daily": {...}, "weekly": {...}, "biweekly": {...}}
+    or flat structure: {"profit_daily": 100, "calls_daily": 5, ...}
+    """
+    try:
+        logger.info(f"Updating goals for user={CURRENT_USER_ID} with {goals_update}")
+        
+        # Validate and extract goals
+        flat_goals = {}
+        for period in ["daily", "weekly", "biweekly"]:
+            period_data = goals_update.get(period, {})
+            
+            # Support both nested and flat formats
+            profit = period_data.get("profit", period_data.get("profit_target", goals_update.get(f"profit_{period}", 0)))
+            calls = period_data.get("calls", period_data.get("calls_needed", goals_update.get(f"calls_{period}", 0)))
+            reservations = period_data.get("reservations", period_data.get("reservations_needed", goals_update.get(f"reservations_{period}", 0)))
+            
+            # Validate non-negative
+            if profit < 0 or calls < 0 or reservations < 0:
+                raise HTTPException(status_code=400, detail=f"Goals must be non-negative for {period}")
+            
+            flat_goals[f"profit_{period}"] = profit
+            flat_goals[f"calls_{period}"] = calls
+            flat_goals[f"reservations_{period}"] = reservations
+        
+        await update_user_goals(CURRENT_USER_ID, flat_goals)
+        logger.info(f"Successfully updated goals for user={CURRENT_USER_ID}")
+        return await get_goals_dashboard()
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating dashboard goals: {e}")
         raise HTTPException(status_code=500, detail=f"Error updating goals: {str(e)}")
 
 # TEAM FORECAST - Multi-user safe
@@ -2549,6 +2709,24 @@ async def export_csv():
 
 # APP SETUP
 app.include_router(api_router)
+
+# Root endpoint
+@app.get("/")
+async def root():
+    """Health check and API info"""
+    return {
+        "status": "ok",
+        "message": "KPI Tracker API",
+        "version": "2.2",
+        "docs": "/docs",
+        "api_root": "/api"
+    }
+
+# Health check endpoint (no auth required)
+@app.get("/health")
+async def health():
+    """Health check endpoint for monitoring"""
+    return {"status": "ok", "timestamp": datetime.utcnow().isoformat()}
 
 app.add_middleware(
     CORSMiddleware,
