@@ -110,103 +110,36 @@ const EarningsCard = ({ title, usd, pesos, pesoRate, showPesos = true }) => (
   </div>
 );
 
-const WorkTimer = ({ timerStart, elapsedMinutes = 0, onStart, onStop, lastBookingTime, onTimeCalculated }) => {
-  const [elapsed, setElapsed] = useState(0);
+const SimpleClock = () => {
+  const [time, setTime] = useState(new Date());
   
   useEffect(() => {
-    if (!timerStart) {
-      setElapsed(0);
-      return;
-    }
+    const interval = setInterval(() => {
+      setTime(new Date());
+    }, 1000);
     
-    const startTime = new Date(timerStart).getTime();
-    const startSeconds = Math.floor(elapsedMinutes * 60);
-    
-    const updateElapsed = () => {
-      const now = Date.now();
-      const elapsedSeconds = Math.floor((now - startTime) / 1000) + startSeconds;
-      setElapsed(elapsedSeconds);
-    };
-    
-    const interval = setInterval(updateElapsed, 1000);
-    
-    // Recalculate when tab becomes visible (handles laptop sleep, tab switching)
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        updateElapsed();
-      }
-    };
-    
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    
-    return () => {
-      clearInterval(interval);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [timerStart, elapsedMinutes]);
+    return () => clearInterval(interval);
+  }, []);
   
-  const formatTime = (seconds) => {
-    const hrs = Math.floor(seconds / 3600);
-    const mins = Math.floor((seconds % 3600) / 60);
-    const secs = seconds % 60;
-    return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  };
-  
-  const handleStart = async () => {
-    try {
-      await onStart();
-    } catch (error) {
-      const errorMessage = error.response?.data?.detail || error.message || 'Failed to start timer';
-      toast.error(errorMessage);
-    }
-  };
-  
-  const handleStop = async () => {
-    await onStop();
+  const formatTime = (date) => {
+    const hrs = date.getHours().toString().padStart(2, '0');
+    const mins = date.getMinutes().toString().padStart(2, '0');
+    const secs = date.getSeconds().toString().padStart(2, '0');
+    return `${hrs}:${mins}:${secs}`;
   };
   
   return (
     <div className="bg-zinc-900 rounded-xl p-4 border border-zinc-800">
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2">
-          <Clock size={18} className="text-zinc-500" />
-          <span className="text-sm font-semibold text-zinc-400">Work Timer</span>
-        </div>
-        {timerStart && (
-          <span className="text-xs bg-emerald-500/20 text-emerald-400 px-2 py-1 rounded-full animate-pulse">
-            RUNNING
-          </span>
-        )}
+      <div className="flex items-center gap-2 mb-3">
+        <Clock size={18} className="text-zinc-500" />
+        <span className="text-sm font-semibold text-zinc-400">Current Time</span>
       </div>
       <div className="text-4xl font-mono font-bold text-white text-center my-4">
-        {formatTime(elapsed)}
+        {formatTime(time)}
       </div>
-      <div className="flex gap-2">
-        {!timerStart ? (
-          <button
-            onClick={handleStart}
-            className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-lg font-semibold flex items-center justify-center gap-2 transition-colors"
-            data-testid="start-timer-btn"
-          >
-            <Play size={18} />
-            Start Work
-          </button>
-        ) : (
-          <button
-            onClick={handleStop}
-            className="flex-1 bg-red-600 hover:bg-red-700 text-white py-3 rounded-lg font-semibold flex items-center justify-center gap-2 transition-colors"
-            data-testid="stop-timer-btn"
-          >
-            <Square size={18} />
-            Stop
-          </button>
-        )}
-      </div>
-      {timerStart && (
-        <p className="text-xs text-zinc-500 text-center mt-2">
-          Time will auto-fill when you add a booking
-        </p>
-      )}
+      <p className="text-xs text-zinc-500 text-center">
+        Time is captured when you add a booking
+      </p>
     </div>
   );
 };
@@ -372,46 +305,15 @@ function App() {
     }
   };
   
-  const startTimer = async () => {
-    try {
-      const response = await axios.post(`${API}/entries/${today}/timer/start`, null, { headers: getAuthHeaders() });
-      // Force re-render by adding timestamp
-      setTodayEntry(response.data);
-      toast.success('Timer started!');
-    } catch (error) {
-      const errorMessage = error.response?.data?.detail || error.message || 'Failed to start timer';
-      toast.error(errorMessage);
-    }
-  };
-  
-  const stopTimer = async () => {
-    try {
-      const response = await axios.post(`${API}/entries/${today}/timer/stop`, null, { headers: getAuthHeaders() });
-      // Force re-render by adding timestamp
-      setTodayEntry(response.data);
-      toast.success('Timer stopped!');
-    } catch (error) {
-      toast.error('Failed to stop timer');
-    }
-  };
-  
   const addBooking = async () => {
     if (!bookingProfit) return;
-    
-    // Auto-calculate time if timer is running
-    let timeValue = parseInt(timeSinceLast) || 0;
-    if (todayEntry?.work_timer_start && !timeSinceLast) {
-      const start = new Date(todayEntry.work_timer_start).getTime();
-      const now = Date.now();
-      timeValue = Math.floor((now - start) / 60000); // Convert to minutes
-    }
     
     try {
       await axios.post(`${API}/entries/${today}/bookings`, {
         profit: parseFloat(bookingProfit),
         is_prepaid: isPrepaid,
         has_refund_protection: hasRefundProtection,
-        time_since_last: timeValue,
+        time_since_last: parseInt(timeSinceLast) || 0,
       }, { headers: getAuthHeaders() });
       
       toast.success('Booking added!');
@@ -624,13 +526,8 @@ function App() {
           </div>
         )}
         
-        {/* Work Timer */}
-        <WorkTimer
-          timerStart={todayEntry?.work_timer_start}
-          elapsedMinutes={todayEntry?.elapsed_minutes || 0}
-          onStart={startTimer}
-          onStop={stopTimer}
-        />
+        {/* Current Time Clock */}
+        <SimpleClock />
         
         {/* Stats Grid */}
         {stats && (
@@ -862,15 +759,10 @@ function App() {
         <Input
           label="Time Since Last Booking (min)"
           type="number"
-          placeholder={todayEntry?.work_timer_start ? 'Auto from timer' : '30'}
+          placeholder="0"
           value={timeSinceLast}
           onChange={(e) => setTimeSinceLast(e.target.value)}
         />
-        {todayEntry?.work_timer_start && !timeSinceLast && (
-          <p className="text-xs text-emerald-400 -mt-2 mb-4">
-            ✓ Will auto-fill from running timer
-          </p>
-        )}
         <Toggle label="Prepaid (counts toward spin)" checked={isPrepaid} onChange={setIsPrepaid} />
         <Toggle label="Refund Protection" checked={hasRefundProtection} onChange={setHasRefundProtection} />
         <button
