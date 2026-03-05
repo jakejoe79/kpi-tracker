@@ -763,6 +763,12 @@ function App() {
           value={timeSinceLast}
           onChange={(e) => setTimeSinceLast(e.target.value)}
         />
+        <div className="mb-4 bg-zinc-800 rounded-lg p-3 border border-zinc-700">
+          <label className="block text-sm text-zinc-400 mb-2">Time Captured</label>
+          <div className="text-2xl font-mono font-bold text-white text-center">
+            {new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+          </div>
+        </div>
         <Toggle label="Prepaid (counts toward spin)" checked={isPrepaid} onChange={setIsPrepaid} />
         <Toggle label="Refund Protection" checked={hasRefundProtection} onChange={setHasRefundProtection} />
         <button
