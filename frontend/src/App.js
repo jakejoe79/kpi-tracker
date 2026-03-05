@@ -114,52 +114,35 @@ const WorkTimer = ({ timerStart, elapsedMinutes = 0, onStart, onStop, lastBookin
   const [elapsed, setElapsed] = useState(0);
   
   useEffect(() => {
-    if (timerStart) {
-      // Start with the elapsed minutes from the backend
-      const startSeconds = Math.floor(elapsedMinutes * 60);
-      setElapsed(startSeconds);
-      
-      // Parse the timer start time - handle both string and Date objects
-      let startTime;
-      
-      if (typeof timerStart === 'string') {
-        // Parse ISO string, handling UTC time
-        const date = new Date(timerStart);
-        if (timerStart.includes('Z')) {
-          // Already has UTC indicator
-          startTime = date.getTime();
-        } else {
-          // Assume UTC if no timezone indicator
-          startTime = Date.UTC(
-            date.getUTCFullYear(),
-            date.getUTCMonth(),
-            date.getUTCDate(),
-            date.getUTCHours(),
-            date.getUTCMinutes(),
-            date.getUTCSeconds(),
-            date.getUTCMilliseconds()
-          );
-        }
-      } else if (timerStart instanceof Date) {
-        startTime = timerStart.getTime();
-      } else {
-        startTime = Date.now(); // Fallback to current time
-      }
-      
-      // If startTime is invalid (NaN), use current time
-      if (isNaN(startTime)) {
-        startTime = Date.now();
-      }
-      
-      const interval = setInterval(() => {
-        const now = Date.now();
-        const elapsedSeconds = Math.floor((now - startTime) / 1000) + startSeconds;
-        setElapsed(elapsedSeconds);
-      }, 1000);
-      return () => clearInterval(interval);
-    } else {
+    if (!timerStart) {
       setElapsed(0);
+      return;
     }
+    
+    const startTime = new Date(timerStart).getTime();
+    const startSeconds = Math.floor(elapsedMinutes * 60);
+    
+    const updateElapsed = () => {
+      const now = Date.now();
+      const elapsedSeconds = Math.floor((now - startTime) / 1000) + startSeconds;
+      setElapsed(elapsedSeconds);
+    };
+    
+    const interval = setInterval(updateElapsed, 1000);
+    
+    // Recalculate when tab becomes visible (handles laptop sleep, tab switching)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        updateElapsed();
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [timerStart, elapsedMinutes]);
   
   const formatTime = (seconds) => {
