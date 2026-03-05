@@ -43,6 +43,22 @@ from contextlib import asynccontextmanager
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 import statistics
+import json
+from bson import ObjectId
+from json import JSONEncoder
+from fastapi.responses import JSONResponse
+
+class MongoJSONEncoder(JSONEncoder):
+    def default(self, o):
+        if isinstance(o, ObjectId):
+            return str(o)
+        if isinstance(o, (datetime, date)):
+            return o.isoformat()
+        return super().default(o)
+
+class MongoJSONResponse(JSONResponse):
+    def render(self, content):
+        return json.dumps(content, cls=MongoJSONEncoder).encode('utf-8')
 
 from constants import SPIN_RULES, calculate_progress, is_on_track, get_status
 
@@ -128,6 +144,18 @@ client = AsyncIOMotorClient(mongo_url)
 db = client[db_name]
 
 app = FastAPI()
+
+# simple request logging middleware to trace calls
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    logger.info(f"Incoming {request.method} {request.url}")
+    try:
+        response = await call_next(request)
+        logger.info(f"Completed {request.method} {request.url} -> {response.status_code}")
+        return response
+    except Exception as e:
+        logger.exception(f"Error handling request {request.method} {request.url}: {e}")
+        raise
 api_router = APIRouter(prefix="/api")
 
 # =============================================================================
@@ -153,8 +181,18 @@ DEFAULT_GOALS = {
 }
 
 # =============================================================================
-# PERIOD LOGIC
+# RESPONSE SANITIZATION - Remove MongoDB ObjectIds
 # =============================================================================
+
+def sanitize_response(doc: dict) -> dict:
+    """Remove ObjectId and other non-serializable fields from MongoDB docs."""
+    if not doc:
+        return doc
+    result = dict(doc)
+    if "_id" in result:
+        del result["_id"]
+    return result
+
 
 def get_last_day_of_month(year: int, month: int) -> int:
     return calendar.monthrange(year, month)[1]
@@ -2244,12 +2282,14 @@ async def update_calls(date: str, calls_received: int):
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
     _, _, period_id = get_current_period()
     await db.daily_entries.update_one({"user_id": CURRENT_USER_ID, "date": date}, {"$set": {"calls_received": calls_received, "updated_at": datetime.utcnow()}, "$setOnInsert": {"id": str(uuid.uuid4()), "user_id": CURRENT_USER_ID, "date": date, "period_id": period_id, "bookings": [], "spins": [], "misc_income": [], "total_time_minutes": 0.0, "created_at": datetime.utcnow()}}, upsert=True)
-    return await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
+    entry = await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
+    return sanitize_response(entry)
 
 
 @api_router.post("/entries/{date}/timer/start")
 async def start_timer(date: str):
     """Start work timer"""
+    logger.info(f"start_timer called for user={CURRENT_USER_ID} date={date}")
     try:
         datetime.fromisoformat(date)
     except ValueError:
@@ -2268,12 +2308,14 @@ async def start_timer(date: str):
     # Now start the new timer
     _, _, period_id = get_current_period()
     await db.daily_entries.update_one({"user_id": CURRENT_USER_ID, "date": date}, {"$set": {"work_timer_start": datetime.utcnow().isoformat(), "updated_at": datetime.utcnow()}, "$setOnInsert": {"id": str(uuid.uuid4()), "user_id": CURRENT_USER_ID, "date": date, "period_id": period_id, "calls_received": 0, "bookings": [], "spins": [], "misc_income": [], "total_time_minutes": 0.0, "created_at": datetime.utcnow()}}, upsert=True)
-    return await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
+    entry = await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
+    return sanitize_response(entry)
 
 
 @api_router.post("/entries/{date}/timer/stop")
 async def stop_timer(date: str):
     """Stop work timer"""
+    logger.info(f"stop_timer called for user={CURRENT_USER_ID} date={date}")
     try:
         datetime.fromisoformat(date)
     except ValueError:
@@ -2284,12 +2326,14 @@ async def stop_timer(date: str):
     timer_start = datetime.fromisoformat(entry["work_timer_start"])
     elapsed_minutes = (datetime.utcnow() - timer_start).total_seconds() / 60
     await db.daily_entries.update_one({"user_id": CURRENT_USER_ID, "date": date}, {"$set": {"work_timer_start": None, "updated_at": datetime.utcnow()}, "$inc": {"total_time_minutes": elapsed_minutes}})
-    return await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
+    entry = await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
+    return sanitize_response(entry)
 
 # Additional timer helpers/endpoints
 @api_router.get("/entries/{date}/timer")
 async def get_timer_status(date: str):
     """Retrieve timer info for a given date (elapsed, start, total)."""
+    logger.info(f"get_timer_status called for user={CURRENT_USER_ID} date={date}")
     try:
         datetime.fromisoformat(date)
     except ValueError:
@@ -2297,8 +2341,7 @@ async def get_timer_status(date: str):
     entry = await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
     if not entry:
         raise HTTPException(status_code=404, detail="Entry not found")
-    # reuse normalization so elapsed_minutes is computed
-    normalized = normalize_entry(entry, user_id=CURRENT_USER_ID)
+    normalized = normalize_entry(sanitize_response(entry), user_id=CURRENT_USER_ID)
     return {
         "work_timer_start": normalized.get("work_timer_start"),
         "total_time_minutes": normalized.get("total_time_minutes"),
@@ -2318,7 +2361,8 @@ async def add_booking(date: str, booking: BookingCreate):
     booking_dict["id"] = str(uuid.uuid4())
     booking_dict["timestamp"] = datetime.utcnow()
     await db.daily_entries.update_one({"user_id": CURRENT_USER_ID, "date": date}, {"$push": {"bookings": booking_dict}, "$set": {"updated_at": datetime.utcnow()}, "$setOnInsert": {"id": str(uuid.uuid4()), "user_id": CURRENT_USER_ID, "date": date, "period_id": period_id, "calls_received": 0, "spins": [], "misc_income": [], "total_time_minutes": 0.0, "created_at": datetime.utcnow()}}, upsert=True)
-    return await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
+    entry = await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
+    return sanitize_response(entry)
 
 
 @api_router.post("/entries/{date}/spins")
@@ -2333,7 +2377,8 @@ async def add_spin(date: str, spin: SpinCreate):
     spin_dict["id"] = str(uuid.uuid4())
     spin_dict["timestamp"] = datetime.utcnow()
     await db.daily_entries.update_one({"user_id": CURRENT_USER_ID, "date": date}, {"$push": {"spins": spin_dict}, "$set": {"updated_at": datetime.utcnow()}, "$setOnInsert": {"id": str(uuid.uuid4()), "user_id": CURRENT_USER_ID, "date": date, "period_id": period_id, "calls_received": 0, "bookings": [], "misc_income": [], "total_time_minutes": 0.0, "created_at": datetime.utcnow()}}, upsert=True)
-    return await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
+    entry = await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
+    return sanitize_response(entry)
 
 
 @api_router.post("/entries/{date}/misc")
@@ -2348,7 +2393,8 @@ async def add_misc_income(date: str, misc: MiscIncomeCreate):
     misc_dict["id"] = str(uuid.uuid4())
     misc_dict["timestamp"] = datetime.utcnow()
     await db.daily_entries.update_one({"user_id": CURRENT_USER_ID, "date": date}, {"$push": {"misc_income": misc_dict}, "$set": {"updated_at": datetime.utcnow()}, "$setOnInsert": {"id": str(uuid.uuid4()), "user_id": CURRENT_USER_ID, "date": date, "period_id": period_id, "calls_received": 0, "bookings": [], "spins": [], "total_time_minutes": 0.0, "created_at": datetime.utcnow()}}, upsert=True)
-    return await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
+    entry = await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
+    return sanitize_response(entry)
 
 
 @api_router.put("/entries/{date}/misc/{misc_id}")
@@ -2379,8 +2425,8 @@ async def update_misc_income(date: str, misc_id: str, misc_update: MiscIncomeCre
         {"user_id": CURRENT_USER_ID, "date": date},
         {"$set": {"misc_income": misc_income, "updated_at": datetime.utcnow()}}
     )
-
-    return await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
+    entry = await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
+    return sanitize_response(entry)
 
 
 @api_router.delete("/entries/{date}/misc/{misc_id}")
@@ -2408,7 +2454,8 @@ async def delete_misc_income(date: str, misc_id: str):
         {"user_id": CURRENT_USER_ID, "date": date},
         {"$set": {"misc_income": updated_misc, "updated_at": datetime.utcnow()}}
     )
-    return await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
+    entry = await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
+    return sanitize_response(entry)
 
 
 @api_router.delete("/entries/{date}/bookings/{booking_id}")
@@ -2436,7 +2483,8 @@ async def delete_booking(date: str, booking_id: str):
         {"user_id": CURRENT_USER_ID, "date": date},
         {"$set": {"bookings": updated_bookings, "updated_at": datetime.utcnow()}}
     )
-    return await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
+    entry = await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
+    return sanitize_response(entry)
 
 @api_router.put("/entries/{date}/bookings/{booking_id}")
 async def update_booking(date: str, booking_id: str, booking_update: BookingCreate):
@@ -2466,8 +2514,8 @@ async def update_booking(date: str, booking_id: str, booking_update: BookingCrea
         {"user_id": CURRENT_USER_ID, "date": date},
         {"$set": {"bookings": bookings, "updated_at": datetime.utcnow()}}
     )
-
-    return await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
+    entry = await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
+    return sanitize_response(entry)
 
 
 
