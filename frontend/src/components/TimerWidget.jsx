@@ -54,6 +54,7 @@ function TimerWidget() {
     };
 
     loadTimerState();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Update current time every second
