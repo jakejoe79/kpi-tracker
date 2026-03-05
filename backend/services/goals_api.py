@@ -13,6 +13,8 @@ from db.schema import (
     get_profit_targets_collection,
     get_metrics_collection
 )
+from services.metrics import calculate_conversion_rate, calculate_booking_speed
+from services.goals import recalculate_daily_goals, recalculate_weekly_goals, recalculate_biweekly_goals
 
 logger = logging.getLogger(__name__)
 
@@ -42,55 +44,93 @@ async def get_current_goals(db: AsyncIOMotorDatabase, user_id: str) -> Dict:
                 "biweekly": None,
             }
         
-        # Get today's entry for progress
-        today_str = date.today().isoformat()
-        today_entry = await daily_entries.find_one({
+        goals_flat = goals_doc.get("goals", {})
+        
+        # Get date ranges for progress calculation
+        today = date.today()
+        today_str = today.isoformat()
+        
+        # Daily: just today
+        daily_start = today
+        daily_end = today
+        
+        # Weekly: last 7 days
+        weekly_start = today - timedelta(days=6)
+        weekly_end = today
+        
+        # Biweekly: last 14 days
+        biweekly_start = today - timedelta(days=13)
+        biweekly_end = today
+        
+        # Get entries for progress calculation
+        daily_entries_list = await daily_entries.find({
             "user_id": user_id,
-            "date": today_str
-        })
+            "date": {"$gte": daily_start.isoformat(), "$lte": daily_end.isoformat()}
+        }).to_list(None)
+        
+        weekly_entries_list = await daily_entries.find({
+            "user_id": user_id,
+            "date": {"$gte": weekly_start.isoformat(), "$lte": weekly_end.isoformat()}
+        }).to_list(None)
+        
+        biweekly_entries_list = await daily_entries.find({
+            "user_id": user_id,
+            "date": {"$gte": biweekly_start.isoformat(), "$lte": biweekly_end.isoformat()}
+        }).to_list(None)
         
         result = {}
         
         # Process each period type
         for period_type in ["daily", "weekly", "biweekly"]:
-            goals_key = f"{period_type}_goals"
+            profit_key = f"profit_{period_type}"
+            calls_key = f"calls_{period_type}"
+            reservations_key = f"reservations_{period_type}"
             
-            if goals_key not in goals_doc:
+            if profit_key not in goals_flat:
                 result[period_type] = None
                 continue
             
-            goals = goals_doc[goals_key]
+            profit_target = goals_flat.get(profit_key, 0)
+            calls_needed = goals_flat.get(calls_key, 0)
+            reservations_needed = goals_flat.get(reservations_key, 0)
+            
+            # Get entries for this period
+            if period_type == "daily":
+                entries = daily_entries_list
+                effective_date = today_str
+            elif period_type == "weekly":
+                entries = weekly_entries_list
+                effective_date = weekly_end.isoformat()
+            else:  # biweekly
+                entries = biweekly_entries_list
+                effective_date = biweekly_end.isoformat()
             
             # Calculate progress
-            if today_entry:
-                current_calls = today_entry.get("calls_received", 0)
-                bookings = today_entry.get("bookings", [])
-                current_reservations = len(bookings)
-                current_profit = sum(b.get("profit", 0) for b in bookings)
-            else:
-                current_calls = 0
-                current_reservations = 0
-                current_profit = 0
+            current_calls = sum(e.get("calls_received", 0) for e in entries)
+            current_reservations = sum(len(e.get("bookings", [])) for e in entries)
+            current_profit = sum(
+                sum(b.get("profit", 0) for b in e.get("bookings", []))
+                for e in entries
+            )
             
             # Calculate progress percentage
-            calls_needed = goals.get("calls_needed", 1)
             progress_percent = (current_calls / calls_needed * 100) if calls_needed > 0 else 0
             
-            # Calculate time remaining
-            time_needed = goals.get("time_needed_minutes", 0)
-            time_remaining = max(0, time_needed - (today_entry.get("total_time_minutes", 0) if today_entry else 0))
+            # For time, we don't have it in flat structure, so skip or estimate
+            time_needed_minutes = 0  # Not stored in flat structure
+            time_remaining = 0
             
             result[period_type] = {
-                "profit_target": goals.get("profit_target", 0),
+                "profit_target": profit_target,
                 "calls_needed": calls_needed,
-                "reservations_needed": goals.get("reservations_needed", 0),
-                "time_needed_minutes": time_needed,
+                "reservations_needed": reservations_needed,
+                "time_needed_minutes": time_needed_minutes,
                 "current_calls": current_calls,
                 "current_reservations": current_reservations,
                 "current_profit": current_profit,
                 "progress_percent": round(progress_percent, 1),
                 "time_remaining_minutes": time_remaining,
-                "effective_date": today_str,
+                "effective_date": effective_date,
             }
         
         return result

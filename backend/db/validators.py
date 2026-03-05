@@ -234,8 +234,11 @@ def get_daily_entries_validator() -> Dict[str, Any]:
     return {
         "$jsonSchema": {
             "bsonType": "object",
-            "required": ["user_id", "date", "created_at"],
+            "required": ["id", "user_id", "date", "created_at"],
             "properties": {
+                "id": {
+                    "bsonType": "string"
+                },
                 "user_id": {
                     "bsonType": "string"
                 },
@@ -298,6 +301,14 @@ def get_daily_entries_validator() -> Dict[str, Any]:
                         },
                         "additionalProperties": False
                     }
+                },
+                "work_timer_start": {
+                    "bsonType": ["string", "null"],
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?$|^null$"
+                },
+                "total_time_minutes": {
+                    "bsonType": "double",
+                    "minimum": 0
                 },
                 "created_at": {
                     "bsonType": "date"

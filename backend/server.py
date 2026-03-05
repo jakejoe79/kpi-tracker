@@ -1605,6 +1605,12 @@ async def get_goals():
         },
     }
 
+
+@api_router.get("/current-goals")
+async def get_current_goals_endpoint():
+    """Get current goals with live progress"""
+    return await get_current_goals(db, CURRENT_USER_ID)
+
 @api_router.put("/goals")
 async def update_goals(goals: dict):
     """Update user goals"""
@@ -2163,6 +2169,20 @@ async def get_settings():
     return {"user_id": CURRENT_USER_ID, "user_plan": settings.get("user_plan", CURRENT_USER_PLAN), "peso_rate": settings.get("peso_rate", 17.50), "goals": settings.get("goals", await get_user_goals(CURRENT_USER_ID))}
 
 
+@api_router.put("/settings")
+async def update_settings(settings: dict):
+    """Update user settings"""
+    try:
+        await db.user_settings.update_one(
+            {"user_id": CURRENT_USER_ID},
+            {"$set": {"peso_rate": settings.get("peso_rate", 17.50), "updated_at": datetime.utcnow()}},
+            upsert=True
+        )
+        return await get_settings()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error updating settings: {str(e)}")
+
+
 @api_router.put("/entries/{date}/calls")
 async def update_calls(date: str, calls_received: int):
     """Update calls received for a date"""
@@ -2171,7 +2191,7 @@ async def update_calls(date: str, calls_received: int):
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
     _, _, period_id = get_current_period()
-    await db.daily_entries.update_one({"user_id": CURRENT_USER_ID, "date": date}, {"$set": {"calls_received": calls_received, "updated_at": datetime.utcnow()}, "$setOnInsert": {"id": str(uuid.uuid4()), "user_id": CURRENT_USER_ID, "date": date, "period_id": period_id, "bookings": [], "spins": [], "misc_income": [], "created_at": datetime.utcnow()}}, upsert=True)
+    await db.daily_entries.update_one({"user_id": CURRENT_USER_ID, "date": date}, {"$set": {"calls_received": calls_received, "updated_at": datetime.utcnow()}, "$setOnInsert": {"id": str(uuid.uuid4()), "user_id": CURRENT_USER_ID, "date": date, "period_id": period_id, "bookings": [], "spins": [], "misc_income": [], "total_time_minutes": 0.0, "created_at": datetime.utcnow()}}, upsert=True)
     return await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
 
 
@@ -2183,10 +2203,19 @@ async def start_timer(date: str):
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
     entry = await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
+    
+    # If timer is already running, stop it first and add the time
     if entry and entry.get("work_timer_start"):
-        raise HTTPException(status_code=400, detail="Timer already running")
+        timer_start = datetime.fromisoformat(entry["work_timer_start"])
+        elapsed_minutes = (datetime.utcnow() - timer_start).total_seconds() / 60
+        await db.daily_entries.update_one(
+            {"user_id": CURRENT_USER_ID, "date": date}, 
+            {"$set": {"work_timer_start": None, "updated_at": datetime.utcnow()}, "$inc": {"total_time_minutes": elapsed_minutes}}
+        )
+    
+    # Now start the new timer
     _, _, period_id = get_current_period()
-    await db.daily_entries.update_one({"user_id": CURRENT_USER_ID, "date": date}, {"$set": {"work_timer_start": datetime.utcnow().isoformat(), "updated_at": datetime.utcnow()}, "$setOnInsert": {"id": str(uuid.uuid4()), "user_id": CURRENT_USER_ID, "date": date, "period_id": period_id, "calls_received": 0, "bookings": [], "spins": [], "misc_income": [], "created_at": datetime.utcnow()}}, upsert=True)
+    await db.daily_entries.update_one({"user_id": CURRENT_USER_ID, "date": date}, {"$set": {"work_timer_start": datetime.utcnow().isoformat(), "updated_at": datetime.utcnow()}, "$setOnInsert": {"id": str(uuid.uuid4()), "user_id": CURRENT_USER_ID, "date": date, "period_id": period_id, "calls_received": 0, "bookings": [], "spins": [], "misc_income": [], "total_time_minutes": 0.0, "created_at": datetime.utcnow()}}, upsert=True)
     return await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
 
 
@@ -2217,7 +2246,7 @@ async def add_booking(date: str, booking: BookingCreate):
     booking_dict = booking.dict()
     booking_dict["id"] = str(uuid.uuid4())
     booking_dict["timestamp"] = datetime.utcnow()
-    await db.daily_entries.update_one({"user_id": CURRENT_USER_ID, "date": date}, {"$push": {"bookings": booking_dict}, "$set": {"updated_at": datetime.utcnow()}, "$setOnInsert": {"id": str(uuid.uuid4()), "user_id": CURRENT_USER_ID, "date": date, "period_id": period_id, "calls_received": 0, "spins": [], "misc_income": [], "created_at": datetime.utcnow()}}, upsert=True)
+    await db.daily_entries.update_one({"user_id": CURRENT_USER_ID, "date": date}, {"$push": {"bookings": booking_dict}, "$set": {"updated_at": datetime.utcnow()}, "$setOnInsert": {"id": str(uuid.uuid4()), "user_id": CURRENT_USER_ID, "date": date, "period_id": period_id, "calls_received": 0, "spins": [], "misc_income": [], "total_time_minutes": 0.0, "created_at": datetime.utcnow()}}, upsert=True)
     return await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
 
 
@@ -2232,7 +2261,7 @@ async def add_spin(date: str, spin: SpinCreate):
     spin_dict = spin.dict()
     spin_dict["id"] = str(uuid.uuid4())
     spin_dict["timestamp"] = datetime.utcnow()
-    await db.daily_entries.update_one({"user_id": CURRENT_USER_ID, "date": date}, {"$push": {"spins": spin_dict}, "$set": {"updated_at": datetime.utcnow()}, "$setOnInsert": {"id": str(uuid.uuid4()), "user_id": CURRENT_USER_ID, "date": date, "period_id": period_id, "calls_received": 0, "bookings": [], "misc_income": [], "created_at": datetime.utcnow()}}, upsert=True)
+    await db.daily_entries.update_one({"user_id": CURRENT_USER_ID, "date": date}, {"$push": {"spins": spin_dict}, "$set": {"updated_at": datetime.utcnow()}, "$setOnInsert": {"id": str(uuid.uuid4()), "user_id": CURRENT_USER_ID, "date": date, "period_id": period_id, "calls_received": 0, "bookings": [], "misc_income": [], "total_time_minutes": 0.0, "created_at": datetime.utcnow()}}, upsert=True)
     return await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
 
 
@@ -2247,7 +2276,67 @@ async def add_misc_income(date: str, misc: MiscIncomeCreate):
     misc_dict = misc.dict()
     misc_dict["id"] = str(uuid.uuid4())
     misc_dict["timestamp"] = datetime.utcnow()
-    await db.daily_entries.update_one({"user_id": CURRENT_USER_ID, "date": date}, {"$push": {"misc_income": misc_dict}, "$set": {"updated_at": datetime.utcnow()}, "$setOnInsert": {"id": str(uuid.uuid4()), "user_id": CURRENT_USER_ID, "date": date, "period_id": period_id, "calls_received": 0, "bookings": [], "spins": [], "created_at": datetime.utcnow()}}, upsert=True)
+    await db.daily_entries.update_one({"user_id": CURRENT_USER_ID, "date": date}, {"$push": {"misc_income": misc_dict}, "$set": {"updated_at": datetime.utcnow()}, "$setOnInsert": {"id": str(uuid.uuid4()), "user_id": CURRENT_USER_ID, "date": date, "period_id": period_id, "calls_received": 0, "bookings": [], "spins": [], "total_time_minutes": 0.0, "created_at": datetime.utcnow()}}, upsert=True)
+    return await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
+
+
+@api_router.put("/entries/{date}/misc/{misc_id}")
+async def update_misc_income(date: str, misc_id: str, misc_update: MiscIncomeCreate):
+    """Update miscellaneous income"""
+    try:
+        datetime.fromisoformat(date)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+
+    entry = await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
+    if not entry:
+        raise HTTPException(status_code=404, detail="Entry not found")
+
+    misc_income = entry.get("misc_income", [])
+    misc_index = next((i for i, m in enumerate(misc_income) if m.get("id") == misc_id), None)
+
+    if misc_index is None:
+        raise HTTPException(status_code=404, detail="Misc income not found")
+
+    # Update the misc income while preserving id and timestamp
+    updated_misc = misc_update.dict()
+    updated_misc["id"] = misc_income[misc_index]["id"]
+    updated_misc["timestamp"] = misc_income[misc_index].get("timestamp", datetime.utcnow())
+    misc_income[misc_index] = updated_misc
+
+    await db.daily_entries.update_one(
+        {"user_id": CURRENT_USER_ID, "date": date},
+        {"$set": {"misc_income": misc_income, "updated_at": datetime.utcnow()}}
+    )
+
+    return await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
+
+
+@api_router.delete("/entries/{date}/misc/{misc_id}")
+async def delete_misc_income(date: str, misc_id: str):
+    """Delete miscellaneous income"""
+    try:
+        datetime.fromisoformat(date)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+    entry = await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
+    if not entry:
+        raise HTTPException(status_code=404, detail="Entry not found")
+    
+    # Convert misc_id to string for comparison
+    misc_id_str = str(misc_id)
+    misc_income = entry.get("misc_income", [])
+    
+    # Find and remove the misc income
+    updated_misc = [m for m in misc_income if str(m.get("id")) != misc_id_str]
+    
+    if len(updated_misc) == len(misc_income):
+        raise HTTPException(status_code=404, detail="Misc income not found")
+    
+    await db.daily_entries.update_one(
+        {"user_id": CURRENT_USER_ID, "date": date},
+        {"$set": {"misc_income": updated_misc, "updated_at": datetime.utcnow()}}
+    )
     return await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
 
 
