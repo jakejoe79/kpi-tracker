@@ -181,3 +181,156 @@
     opacity: 0.5;
   }
 }
+
+/* New Clock Design Styles */
+.clock-display {
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+.clock-face {
+  background: linear-gradient(135deg, #1e293b, #0f172a);
+  border-radius: 16px;
+  padding: 30px 20px;
+  margin-bottom: 15px;
+  border: 2px solid #334155;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.elapsed-time {
+  font-size: 3rem;
+  font-weight: 700;
+  font-family: 'Courier New', monospace;
+  color: #fbbf24;
+  letter-spacing: 4px;
+  margin-bottom: 5px;
+}
+
+.time-label {
+  font-size: 0.75rem;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  font-weight: 500;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.status-idle {
+  background: #374151;
+  color: #9ca3af;
+}
+
+.status-running {
+  background: #16a34a;
+  color: #dcfce7;
+  animation: pulse-bg 2s infinite;
+}
+
+.status-paused {
+  background: #d97706;
+  color: #fef3c7;
+}
+
+@keyframes pulse-bg {
+  0%, 100% {
+    background: #16a34a;
+  }
+  50% {
+    background: #15803d;
+  }
+}
+
+.control-panel {
+  margin-bottom: 20px;
+}
+
+.control-row {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+
+.clock-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.clock-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+}
+
+.clock-btn:active {
+  transform: translateY(0);
+}
+
+.clock-btn-punch-in {
+  background: #22c55e;
+  color: #fff;
+  width: 100%;
+}
+
+.clock-btn-punch-in:hover {
+  background: #16a34a;
+}
+
+.clock-btn-break {
+  background: #f59e0b;
+  color: #fff;
+  flex: 1;
+}
+
+.clock-btn-break:hover {
+  background: #d97706;
+}
+
+.clock-btn-punch-out {
+  background: #ef4444;
+  color: #fff;
+  flex: 1;
+}
+
+.clock-btn-punch-out:hover {
+  background: #dc2626;
+}
+
+.clock-btn-resume {
+  background: #22c55e;
+  color: #fff;
+  flex: 1;
+}
+
+.clock-btn-resume:hover {
+  background: #16a34a;
+}
+
+.current-time-display {
+  text-align: center;
+  font-size: 1.2rem;
+  font-family: 'Courier New', monospace;
+  color: #4ade80;
+  letter-spacing: 2px;
+  background: #0f0f1a;
+  padding: 10px;
+  border-radius: 8px;
+  margin-top: 15px;
+}

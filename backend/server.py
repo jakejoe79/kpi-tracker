@@ -163,17 +163,17 @@ api_router = APIRouter(prefix="/api")
 # =============================================================================
 
 DEFAULT_GOALS = {
-    "calls_biweekly": 10,
-    "reservations_biweekly": 5,
-    "profit_biweekly": 0,
+    "calls_biweekly": 1498,  # Based on 107 calls/day * 14 days at 15% conversion
+    "reservations_biweekly": 224,  # 16 bookings/day * 14 days (1 every 30 mins)
+    "profit_biweekly": 537.6,  # 38.4/day * 14 days at $2.40 avg per booking
     "spins_biweekly": 0,
     "combined_biweekly": 0,
     "misc_biweekly": 0,
-    "calls_daily": 0,
-    "reservations_daily": 0,
-    "profit_daily": 0,
+    "calls_daily": 107,  # 16 bookings / 0.15 conversion rate
+    "reservations_daily": 16,  # 1 booking every 30 mins for 8-hour day
+    "profit_daily": 38.4,  # 16 bookings * $2.40 avg profit
     "spins_daily": 0,
-    "avg_time_per_booking": 0,
+    "avg_time_per_booking": 30,  # 1 booking every 30 mins
     "avg_spin": 0,
     "avg_mega_spin": 0,
     # include peso_rate here so default goals dict always carries it
@@ -1651,10 +1651,14 @@ async def get_settings():
 # Keep old endpoint for backward compatibility
 @api_router.get("/goals")
 async def get_goals():
+    # Return the full dashboard object so the UI has progress percentages and
+    # on-track status.  We also include the flat goals under a separate key
+    # for any parts of the frontend still expecting the original format.
+    dashboard = await get_goals_dashboard()
     flat_goals = await get_user_goals(CURRENT_USER_ID)
-    
-    # Convert flat structure to nested structure for frontend compatibility
-    return {
+    dashboard["flat_goals"] = flat_goals
+    # also keep the old nest for backwards compatibility
+    dashboard.update({
         "profit_daily": flat_goals.get("profit_daily", 0),
         "calls_daily": flat_goals.get("calls_daily", 0),
         "reservations_daily": flat_goals.get("reservations_daily", 0),
@@ -1679,7 +1683,8 @@ async def get_goals():
             "calls_needed": flat_goals.get("calls_biweekly", 0),
             "reservations_needed": flat_goals.get("reservations_biweekly", 0),
         },
-    }
+    })
+    return dashboard
 
 
 @api_router.get("/dashboard/goals")
@@ -1806,12 +1811,22 @@ async def get_goals_dashboard():
 
 @api_router.get("/current-goals")
 async def get_current_goals_endpoint():
-    """Get current goals with live progress"""
-    return await get_current_goals(db, CURRENT_USER_ID)
+    """Get current goals with live progress (dashboard format)."
+    
+    This route is kept for backwards compatibility with older frontend
+    code; it simply proxies to the new dashboard endpoint format.
+    """
+    # When called we delegate to the full dashboard calculation.
+    return await get_goals_dashboard()
 
 @api_router.put("/goals")
 async def update_goals(goals: dict):
-    """Update user goals"""
+    """Update user goals (legacy route).
+
+    Returns the full dashboard object so that older UI clients can continue
+    using this endpoint without needing to know about the new
+    ``/dashboard/goals`` path.
+    """
     try:
         # Extract flat structure from nested or flat input
         flat_goals = {
@@ -1826,7 +1841,8 @@ async def update_goals(goals: dict):
             "reservations_biweekly": goals.get("reservations_biweekly", goals.get("biweekly", {}).get("reservations_needed", 0)),
         }
         await update_user_goals(CURRENT_USER_ID, flat_goals)
-        return await get_goals()
+        # return updated dashboard so UI can refresh progress
+        return await get_goals_dashboard()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error updating goals: {str(e)}")
 
@@ -2469,7 +2485,9 @@ async def start_timer(date: str):
     _, _, period_id = get_current_period()
     await db.daily_entries.update_one({"user_id": CURRENT_USER_ID, "date": date}, {"$set": {"work_timer_start": datetime.utcnow().isoformat(), "updated_at": datetime.utcnow()}, "$setOnInsert": {"id": str(uuid.uuid4()), "user_id": CURRENT_USER_ID, "date": date, "period_id": period_id, "calls_received": 0, "bookings": [], "spins": [], "misc_income": [], "total_time_minutes": 0.0, "created_at": datetime.utcnow()}}, upsert=True)
     entry = await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
-    return sanitize_response(entry)
+    # return normalized entry so frontend can immediately render elapsed_minutes
+    normalized = normalize_entry(sanitize_response(entry), user_id=CURRENT_USER_ID)
+    return normalized
 
 
 @api_router.post("/entries/{date}/timer/stop")
@@ -2487,7 +2505,8 @@ async def stop_timer(date: str):
     elapsed_minutes = (datetime.utcnow() - timer_start).total_seconds() / 60
     await db.daily_entries.update_one({"user_id": CURRENT_USER_ID, "date": date}, {"$set": {"work_timer_start": None, "updated_at": datetime.utcnow()}, "$inc": {"total_time_minutes": elapsed_minutes}})
     entry = await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
-    return sanitize_response(entry)
+    normalized = normalize_entry(sanitize_response(entry), user_id=CURRENT_USER_ID)
+    return normalized
 
 # Additional timer helpers/endpoints
 @api_router.get("/entries/{date}/timer")
@@ -2714,6 +2733,17 @@ app.include_router(api_router)
 @app.get("/")
 async def root():
     """Health check and API info"""
+    return {
+        "status": "ok",
+        "message": "KPI Tracker API",
+        "version": "2.2",
+        "docs": "/docs",
+        "api_root": "/api"
+    }
+
+@app.head("/")
+async def root_head():
+    """HEAD version of root endpoint"""
     return {
         "status": "ok",
         "message": "KPI Tracker API",

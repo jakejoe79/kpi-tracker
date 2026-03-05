@@ -1,15 +1,19 @@
-const CACHE_NAME = 'kpi-tracker-v1';
+const CACHE_NAME = 'kpi-tracker-v2';
 const urlsToCache = [
   '/',
-  '/index.html',
-  '/static/js/main.js',
-  '/static/css/main.css'
+  '/index.html'
 ];
 
 self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then(cache => cache.addAll(urlsToCache))
+      .then(cache => {
+        // Try to cache core files, but don't fail if some are missing
+        return Promise.allSettled(
+          urlsToCache.map(url => cache.add(url))
+        );
+      })
+      .catch(err => console.warn('Cache installation error (non-fatal):', err))
   );
   self.skipWaiting();
 });

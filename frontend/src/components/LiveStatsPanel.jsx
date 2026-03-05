@@ -34,11 +34,11 @@ function LiveStatsPanel({ data }) {
     return `${hours}h ${mins}m`;
   };
 
-  const StatItem = ({ label, value, unit = '' }) => (
+  const StatItem = ({ label, value, goal, unit = '' }) => (
     <div className="stat-item">
       <div className="stat-label">{label}</div>
       <div className="stat-value">
-        {value}
+        {goal !== undefined ? `${value} / ${goal}` : value}
         {unit && <span className="stat-unit">{unit}</span>}
       </div>
     </div>
@@ -52,14 +52,17 @@ function LiveStatsPanel({ data }) {
         <StatItem
           label="Calls Received"
           value={data.current_calls || 0}
+          goal={data.calls_needed}
         />
         <StatItem
           label="Bookings"
           value={data.current_reservations || 0}
+          goal={data.reservations_needed}
         />
         <StatItem
           label="Profit"
           value={`$${(data.current_profit || 0).toFixed(2)}`}
+          goal={data.profit_target ? `$${data.profit_target.toFixed(2)}` : undefined}
         />
         <StatItem
           label="Time Worked"

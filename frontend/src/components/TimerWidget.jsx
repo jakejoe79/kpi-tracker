@@ -3,9 +3,9 @@ import { Play, Pause, Square, Clock, AlertCircle } from 'lucide-react';
 import './TimerWidget.css';
 
 /**
- * Timer Widget - Syncs with Backend
- * Calls /api/entries/{date}/timer/start, stop, and status endpoints
- * Loads elapsed_minutes from server on mount
+ * Timer Widget - Modern Clock Design
+ * Digital clock interface with punch clock style
+ * Syncs with backend for persistent timing
  */
 function TimerWidget() {
   const [timerState, setTimerState] = useState('idle');
@@ -35,15 +35,11 @@ function TimerWidget() {
         
         if (response.ok) {
           const data = await response.json();
-          // If a timer is running on the backend
           if (data.work_timer_start) {
             setTimerState('running');
-            // Convert elapsed_minutes (from server) to seconds and set state
             setElapsedSeconds(Math.floor(data.elapsed_minutes * 60));
-            // Calculate local start time so we can continue counting
             startTimeRef.current = Date.now() - (data.elapsed_minutes * 60 * 1000);
           } else {
-            // Load the accumulated total_time_minutes but don't start counting
             setElapsedSeconds(Math.floor(data.total_time_minutes * 60));
             setTimerState('idle');
           }
@@ -83,16 +79,6 @@ function TimerWidget() {
       minute: '2-digit', 
       second: '2-digit',
       hour12: false 
-    });
-  };
-
-  // Format current date
-  const formatCurrentDate = (date) => {
-    return date.toLocaleDateString('en-US', { 
-      weekday: 'short',
-      year: 'numeric', 
-      month: 'short', 
-      day: 'numeric' 
     });
   };
 
@@ -212,7 +198,7 @@ function TimerWidget() {
     <div className="timer-widget">
       <div className="timer-header">
         <Clock className="timer-icon" size={20} />
-        <h3 className="timer-title">Time</h3>
+        <h3 className="timer-title">Work Clock</h3>
       </div>
 
       {/* Error Display */}
@@ -223,83 +209,76 @@ function TimerWidget() {
         </div>
       )}
 
-      {/* Current Time Display */}
-      <div className="timer-current-time">
-        <div className="current-time-value">{formatCurrentTime(currentTime)}</div>
-        <div className="current-date-value">{formatCurrentDate(currentTime)}</div>
+      {/* Main Clock Display */}
+      <div className="clock-display">
+        <div className="clock-face">
+          <div className="elapsed-time">{formatElapsedTime(elapsedSeconds)}</div>
+          <div className="time-label">WORK TIME</div>
+        </div>
+        
+        {/* Status Badge */}
+        <div className={`status-badge status-${timerState}`}>
+          {timerState === 'idle' && 'OFF DUTY'}
+          {timerState === 'running' && 'ON DUTY'}
+          {timerState === 'paused' && 'BREAK'}
+        </div>
       </div>
 
-      {/* Elapsed Time Display */}
-      <div className="timer-elapsed">
-        <div className="elapsed-value">{formatElapsedTime(elapsedSeconds)}</div>
-        <div className="elapsed-label">Elapsed Time</div>
-      </div>
-
-      {/* Timer Controls */}
-      <div className="timer-controls">
+      {/* Control Panel */}
+      <div className="control-panel">
         {timerState === 'idle' && (
           <button 
-            className="timer-btn timer-btn-start" 
+            className="clock-btn clock-btn-punch-in" 
             onClick={handleStart}
             disabled={!!error}
-            aria-label="Start Timer"
           >
-            <Play size={20} />
-            <span>Start</span>
+            <Play size={18} />
+            PUNCH IN
           </button>
         )}
 
         {timerState === 'running' && (
-          <>
+          <div className="control-row">
             <button 
-              className="timer-btn timer-btn-pause" 
+              className="clock-btn clock-btn-break" 
               onClick={handlePause}
-              aria-label="Pause Timer"
             >
-              <Pause size={20} />
-              <span>Pause</span>
+              <Pause size={18} />
+              BREAK
             </button>
             <button 
-              className="timer-btn timer-btn-stop" 
+              className="clock-btn clock-btn-punch-out" 
               onClick={handleStop}
-              aria-label="Stop Timer"
             >
-              <Square size={20} />
-              <span>Stop</span>
+              <Square size={18} />
+              PUNCH OUT
             </button>
-          </>
+          </div>
         )}
 
         {timerState === 'paused' && (
-          <>
+          <div className="control-row">
             <button 
-              className="timer-btn timer-btn-start" 
+              className="clock-btn clock-btn-resume" 
               onClick={handleResume}
-              aria-label="Resume Timer"
             >
-              <Play size={20} />
-              <span>Resume</span>
+              <Play size={18} />
+              RESUME
             </button>
             <button 
-              className="timer-btn timer-btn-stop" 
+              className="clock-btn clock-btn-punch-out" 
               onClick={handleStop}
-              aria-label="Stop Timer"
             >
-              <Square size={20} />
-              <span>Stop</span>
+              <Square size={18} />
+              PUNCH OUT
             </button>
-          </>
+          </div>
         )}
       </div>
 
-      {/* Timer Status Indicator */}
-      <div className={`timer-status status-${timerState}`}>
-        <span className="status-dot"></span>
-        <span className="status-text">
-          {timerState === 'idle' && 'Ready'}
-          {timerState === 'running' && 'Running'}
-          {timerState === 'paused' && 'Paused'}
-        </span>
+      {/* Current Time */}
+      <div className="current-time-display">
+        {formatCurrentTime(currentTime)}
       </div>
     </div>
   );
