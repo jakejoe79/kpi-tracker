@@ -2,9 +2,13 @@
 import pytest
 from fastapi.testclient import TestClient
 from backend.server import app, get_database
-from backend.config import MONGODB_URI, MONGODB_DB_NAME
+import os
 from motor.motor_asyncio import AsyncIOMotorClient
 import asyncio
+
+# connection info for tests
+MONGODB_URI = os.getenv('MONGO_URL', 'mongodb://localhost:27017/kpi_tracker')
+MONGODB_DB_NAME = os.getenv('DB_NAME', 'kpi_tracker')
 
 client = TestClient(app)
 
@@ -137,3 +141,20 @@ async def test_settings_persistence_survives_multiple_requests(setup_database):
         response = client.get("/api/settings")
         assert response.status_code == 200
         assert response.json()["peso_rate"] == 75.0
+
+
+@pytest.mark.asyncio
+async def test_peso_rate_in_stats_reflects_setting(setup_database):
+    """Changing the peso rate via settings should propagate to statistics."""
+    # update the rate
+    response = client.put("/api/settings", json={"peso_rate": 123.45})
+    assert response.status_code == 200
+
+    # insert a booking for today so earnings are nonzero
+    today = date.today().isoformat()
+    r = client.post(f"/api/entries/{today}/bookings", json={"profit": 100})
+    assert r.status_code == 200
+
+    stats = client.get("/api/stats/today")
+    assert stats.status_code == 200
+    assert stats.json()["earnings"]["peso_rate"] == 123.45

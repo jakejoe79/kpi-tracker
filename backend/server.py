@@ -148,6 +148,8 @@ DEFAULT_GOALS = {
     "avg_time_per_booking": 0,
     "avg_spin": 0,
     "avg_mega_spin": 0,
+    # include peso_rate here so default goals dict always carries it
+    "peso_rate": 17.50,
 }
 
 # =============================================================================
@@ -634,11 +636,28 @@ async def calculate_top_signals_live(user_id: str, limit: int = 5) -> tuple:
 # =============================================================================
 
 async def get_user_goals(user_id: str) -> dict:
-    """Fetch user goals from DB or return defaults"""
-    user_goals = await db.user_goals.find_one({"user_id": user_id})
-    if user_goals:
-        return {**DEFAULT_GOALS, **user_goals.get("goals", {})}
-    return DEFAULT_GOALS.copy()
+    """Fetch user goals from DB or return defaults.
+
+    This function will also look up the user's settings and merge
+    a ``peso_rate`` key if one has been stored there. Endpoints that
+    rely on ``get_user_goals`` (stats, period summaries, etc.) will
+    therefore automatically respect the configured exchange rate.
+    """
+    goals_doc = await db.user_goals.find_one({"user_id": user_id})
+    settings_doc = await db.user_settings.find_one({"user_id": user_id})
+
+    if goals_doc:
+        goals = {**DEFAULT_GOALS, **goals_doc.get("goals", {})}
+    else:
+        # copy to avoid mutating DEFAULT_GOALS
+        goals = DEFAULT_GOALS.copy()
+
+    # settings take precedence for exchange rate
+    if settings_doc and settings_doc.get("peso_rate") is not None:
+        goals["peso_rate"] = settings_doc["peso_rate"]
+    # if user_goals itself included a peso_rate (legacy) leave it
+
+    return goals
 
 async def update_user_goals(user_id: str, goals: dict) -> bool:
     """Save user goals to DB"""
@@ -668,6 +687,22 @@ def build_time_stat(times: List[int], goal: int) -> TimeStat:
     return TimeStat(average=avg, goal=float(goal), on_track=avg <= goal if avg > 0 else True, status="on_track" if avg <= goal else "behind")
 
 def normalize_entry(entry: dict, period_id: str = "", user_id: str = CURRENT_USER_ID) -> dict:
+    """Normalize a raw Mongo entry for API responses.
+
+    The normalized object now includes timer information and a computed
+    ``elapsed_minutes`` field so callers (frontend clock) can render
+    a live timer without hitting a special endpoint.
+    """
+    work_start = entry.get("work_timer_start")
+    total_time = entry.get("total_time_minutes", 0.0)
+    elapsed = total_time
+    if work_start:
+        try:
+            start_dt = datetime.fromisoformat(work_start)
+            elapsed += (datetime.utcnow() - start_dt).total_seconds() / 60
+        except Exception:
+            pass
+
     return {
         "id": entry.get("id", str(uuid.uuid4())),
         "user_id": entry.get("user_id", user_id),
@@ -680,6 +715,9 @@ def normalize_entry(entry: dict, period_id: str = "", user_id: str = CURRENT_USE
         "misc_income": entry.get("misc_income", []),
         "created_at": entry.get("created_at", datetime.utcnow()),
         "updated_at": entry.get("updated_at", datetime.utcnow()),
+        "work_timer_start": work_start,
+        "total_time_minutes": total_time,
+        "elapsed_minutes": round(elapsed, 2),
     }
 
 # =============================================================================
@@ -2173,12 +2211,26 @@ async def get_settings():
 async def update_settings(settings: dict):
     """Update user settings"""
     try:
+        update_doc = {"updated_at": datetime.utcnow()}
+        if "peso_rate" in settings:
+            # validate peso rate before storing
+            rate = settings.get("peso_rate")
+            if not isinstance(rate, (int, float)) or rate <= 0:
+                raise HTTPException(status_code=400, detail="peso_rate must be a positive number")
+            update_doc["peso_rate"] = rate
+        if "user_plan" in settings:
+            update_doc["user_plan"] = settings.get("user_plan")
+        if "goals" in settings:
+            update_doc["goals"] = settings.get("goals")
+
         await db.user_settings.update_one(
             {"user_id": CURRENT_USER_ID},
-            {"$set": {"peso_rate": settings.get("peso_rate", 17.50), "updated_at": datetime.utcnow()}},
+            {"$set": update_doc},
             upsert=True
         )
         return await get_settings()
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error updating settings: {str(e)}")
 
@@ -2233,6 +2285,25 @@ async def stop_timer(date: str):
     elapsed_minutes = (datetime.utcnow() - timer_start).total_seconds() / 60
     await db.daily_entries.update_one({"user_id": CURRENT_USER_ID, "date": date}, {"$set": {"work_timer_start": None, "updated_at": datetime.utcnow()}, "$inc": {"total_time_minutes": elapsed_minutes}})
     return await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
+
+# Additional timer helpers/endpoints
+@api_router.get("/entries/{date}/timer")
+async def get_timer_status(date: str):
+    """Retrieve timer info for a given date (elapsed, start, total)."""
+    try:
+        datetime.fromisoformat(date)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+    entry = await db.daily_entries.find_one({"user_id": CURRENT_USER_ID, "date": date})
+    if not entry:
+        raise HTTPException(status_code=404, detail="Entry not found")
+    # reuse normalization so elapsed_minutes is computed
+    normalized = normalize_entry(entry, user_id=CURRENT_USER_ID)
+    return {
+        "work_timer_start": normalized.get("work_timer_start"),
+        "total_time_minutes": normalized.get("total_time_minutes"),
+        "elapsed_minutes": normalized.get("elapsed_minutes"),
+    }
 
 
 @api_router.post("/entries/{date}/bookings")
