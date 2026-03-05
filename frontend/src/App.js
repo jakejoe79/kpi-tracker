@@ -110,11 +110,15 @@ const EarningsCard = ({ title, usd, pesos, pesoRate, showPesos = true }) => (
   </div>
 );
 
-const WorkTimer = ({ timerStart, onStart, onStop, lastBookingTime, onTimeCalculated }) => {
+const WorkTimer = ({ timerStart, elapsedMinutes = 0, onStart, onStop, lastBookingTime, onTimeCalculated }) => {
   const [elapsed, setElapsed] = useState(0);
   
   useEffect(() => {
     if (timerStart) {
+      // Start with the elapsed minutes from the backend
+      const startSeconds = Math.floor(elapsedMinutes * 60);
+      setElapsed(startSeconds);
+      
       // Parse the timer start time - handle both string and Date objects
       let startTime;
       
@@ -149,14 +153,14 @@ const WorkTimer = ({ timerStart, onStart, onStop, lastBookingTime, onTimeCalcula
       
       const interval = setInterval(() => {
         const now = Date.now();
-        const elapsedSeconds = Math.floor((now - startTime) / 1000);
+        const elapsedSeconds = Math.floor((now - startTime) / 1000) + startSeconds;
         setElapsed(elapsedSeconds);
       }, 1000);
       return () => clearInterval(interval);
     } else {
       setElapsed(0);
     }
-  }, [timerStart]);
+  }, [timerStart, elapsedMinutes]);
   
   const formatTime = (seconds) => {
     const hrs = Math.floor(seconds / 3600);
@@ -168,7 +172,6 @@ const WorkTimer = ({ timerStart, onStart, onStop, lastBookingTime, onTimeCalcula
   const handleStart = async () => {
     try {
       await onStart();
-      // Timer will update from backend response via fetchData
     } catch (error) {
       const errorMessage = error.response?.data?.detail || error.message || 'Failed to start timer';
       toast.error(errorMessage);
@@ -388,8 +391,10 @@ function App() {
   
   const startTimer = async () => {
     try {
-      await axios.post(`${API}/entries/${today}/timer/start`, null, { headers: getAuthHeaders() });
-      fetchData();
+      const response = await axios.post(`${API}/entries/${today}/timer/start`, null, { headers: getAuthHeaders() });
+      // Force re-render by adding timestamp
+      setTodayEntry(response.data);
+      toast.success('Timer started!');
     } catch (error) {
       const errorMessage = error.response?.data?.detail || error.message || 'Failed to start timer';
       toast.error(errorMessage);
@@ -398,8 +403,10 @@ function App() {
   
   const stopTimer = async () => {
     try {
-      await axios.post(`${API}/entries/${today}/timer/stop`, null, { headers: getAuthHeaders() });
-      fetchData();
+      const response = await axios.post(`${API}/entries/${today}/timer/stop`, null, { headers: getAuthHeaders() });
+      // Force re-render by adding timestamp
+      setTodayEntry(response.data);
+      toast.success('Timer stopped!');
     } catch (error) {
       toast.error('Failed to stop timer');
     }
@@ -423,11 +430,6 @@ function App() {
         has_refund_protection: hasRefundProtection,
         time_since_last: timeValue,
       }, { headers: getAuthHeaders() });
-      
-      // Restart timer for next booking
-      if (todayEntry?.work_timer_start) {
-        await axios.post(`${API}/entries/${today}/timer/start`, null, { headers: getAuthHeaders() });
-      }
       
       toast.success('Booking added!');
       setBookingProfit('');
@@ -642,6 +644,7 @@ function App() {
         {/* Work Timer */}
         <WorkTimer
           timerStart={todayEntry?.work_timer_start}
+          elapsedMinutes={todayEntry?.elapsed_minutes || 0}
           onStart={startTimer}
           onStop={stopTimer}
         />
@@ -1007,3 +1010,4 @@ function App() {
 }
 
 export default App;
+
