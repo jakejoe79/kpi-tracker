@@ -312,12 +312,30 @@ function App() {
     const now = new Date();
     const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     
+    // Auto-calculate time since last booking if not manually entered
+    let calculatedTimeSinceLast = parseInt(timeSinceLast) || 0;
+    if (!timeSinceLast && todayEntry?.bookings?.length > 0) {
+      // Get the last booking's time
+      const lastBooking = todayEntry.bookings[todayEntry.bookings.length - 1];
+      if (lastBooking.booking_time) {
+        // Parse the last booking time
+        const lastTimeStr = lastBooking.booking_time;
+        const [lastHours, lastMins, lastSecs] = lastTimeStr.match(/\d+/g).map(Number);
+        const [nowHours, nowMins, nowSecs] = timeStr.match(/\d+/g).map(Number);
+        
+        // Calculate minutes between bookings
+        const lastTotalMins = lastHours * 60 + lastMins;
+        const nowTotalMins = nowHours * 60 + nowMins;
+        calculatedTimeSinceLast = Math.max(0, nowTotalMins - lastTotalMins);
+      }
+    }
+    
     try {
       await axios.post(`${API}/entries/${today}/bookings`, {
         profit: parseFloat(bookingProfit),
         is_prepaid: isPrepaid,
         has_refund_protection: hasRefundProtection,
-        time_since_last: parseInt(timeSinceLast) || 0,
+        time_since_last: calculatedTimeSinceLast,
         booking_time: timeStr,
       }, { headers: getAuthHeaders() });
       
