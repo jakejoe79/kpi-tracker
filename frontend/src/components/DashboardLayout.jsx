@@ -38,34 +38,51 @@ function DashboardLayout({ userId }) {
       try {
         setLoading(true);
         const token = localStorage.getItem('access_token');
-        const response = await fetch(
-          `${process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000'}/api/goals`,
-          {
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json',
-            },
-          }
-        );
+        const today = new Date().toISOString().split('T')[0];
+        
+        // Fetch both goals and today's stats
+        const [goalsRes, statsRes] = await Promise.all([
+          fetch(
+            `${process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000'}/api/goals`,
+            {
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+              },
+            }
+          ),
+          fetch(
+            `${process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000'}/api/stats/today`,
+            {
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+              },
+            }
+          ),
+        ]);
 
-        if (!response.ok) {
+        if (!goalsRes.ok || !statsRes.ok) {
           throw new Error('Failed to fetch dashboard data');
         }
 
-        const data = await response.json();
-        // Map goals data to expected structure
+        const goalsData = await goalsRes.json();
+        const statsData = await statsRes.json();
+        
+        // Map goals and stats data to expected structure
         setDashboardData({
           daily: {
-            profit_target: data.profit_daily || 0,
-            current_profit: 0,
-            progress_percent: 0,
-            time_remaining_minutes: 0,
-            time_needed_minutes: 0,
-            calls_needed: data.calls_daily || 0,
-            current_calls: 0,
-            reservations_needed: data.reservations_daily || 0,
-            current_reservations: 0,
-          }
+            profit_target: goalsData.profit_daily || 72.08,
+            current_profit: statsData.profit?.current || 0,
+            progress_percent: statsData.profit?.status === 'ahead' ? 100 : 50,
+            time_remaining_minutes: 240,
+            time_needed_minutes: 480,
+            calls_needed: goalsData.calls_daily || 188,
+            current_calls: statsData.calls?.current || 0,
+            reservations_needed: goalsData.reservations_daily || 30,
+            current_reservations: statsData.reservations?.current || 0,
+          },
+          stats: statsData
         });
         setError(null);
       } catch (err) {
