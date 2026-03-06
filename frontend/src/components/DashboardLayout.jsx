@@ -98,6 +98,66 @@ function DashboardLayout({ userId }) {
     }
   }, [userId]);
 
+  // Listen for real-time updates from main dashboard
+  useEffect(() => {
+    const handleKpiUpdated = () => {
+      console.log('kpi_updated event received in live goals dashboard, refreshing...');
+      // Re-fetch dashboard data when main dashboard updates
+      const fetchUpdatedData = async () => {
+        try {
+          const token = localStorage.getItem('access_token');
+          const [goalsRes, statsRes] = await Promise.all([
+            fetch(
+              `${process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000'}/api/goals`,
+              {
+                headers: {
+                  'Authorization': `Bearer ${token}`,
+                  'Content-Type': 'application/json',
+                },
+              }
+            ),
+            fetch(
+              `${process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000'}/api/stats/today`,
+              {
+                headers: {
+                  'Authorization': `Bearer ${token}`,
+                  'Content-Type': 'application/json',
+                },
+              }
+            ),
+          ]);
+
+          if (goalsRes.ok && statsRes.ok) {
+            const goalsData = await goalsRes.json();
+            const statsData = await statsRes.json();
+            
+            setDashboardData({
+              daily: {
+                profit_target: goalsData.profit_daily || 72.08,
+                current_profit: statsData.profit?.current || 0,
+                progress_percent: statsData.profit?.status === 'ahead' ? 100 : 50,
+                time_remaining_minutes: 240,
+                time_needed_minutes: 480,
+                calls_needed: goalsData.calls_daily || 188,
+                current_calls: statsData.calls?.current || 0,
+                reservations_needed: goalsData.reservations_daily || 30,
+                current_reservations: statsData.reservations?.current || 0,
+              },
+              stats: statsData
+            });
+          }
+        } catch (err) {
+          console.error('Error updating dashboard data:', err);
+        }
+      };
+
+      fetchUpdatedData();
+    };
+
+    window.addEventListener('kpi_updated', handleKpiUpdated);
+    return () => window.removeEventListener('kpi_updated', handleKpiUpdated);
+  }, []);
+
   if (loading) {
     return <div className="dashboard-loading">Loading dashboard...</div>;
   }
