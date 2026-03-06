@@ -872,11 +872,11 @@ function App() {
         />
         <div className="mb-4">
           <label className="block text-sm text-zinc-400 mb-2">Source</label>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-3 gap-2">
             <button
               type="button"
               onClick={() => setMiscSource('request_lead')}
-              className={`py-2 rounded-lg font-medium ${
+              className={`py-2 rounded-lg font-medium text-sm ${
                 miscSource === 'request_lead' ? 'bg-emerald-500 text-white' : 'bg-zinc-800 text-zinc-400'
               }`}
             >
@@ -885,11 +885,20 @@ function App() {
             <button
               type="button"
               onClick={() => setMiscSource('refund_protection')}
-              className={`py-2 rounded-lg font-medium ${
+              className={`py-2 rounded-lg font-medium text-sm ${
                 miscSource === 'refund_protection' ? 'bg-emerald-500 text-white' : 'bg-zinc-800 text-zinc-400'
               }`}
             >
               Refund Protection
+            </button>
+            <button
+              type="button"
+              onClick={() => setMiscSource('hotel_voucher')}
+              className={`py-2 rounded-lg font-medium text-sm ${
+                miscSource === 'hotel_voucher' ? 'bg-emerald-500 text-white' : 'bg-zinc-800 text-zinc-400'
+              }`}
+            >
+              Hotel Voucher
             </button>
           </div>
         </div>
