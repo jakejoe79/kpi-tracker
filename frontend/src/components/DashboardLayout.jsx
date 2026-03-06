@@ -70,17 +70,18 @@ function DashboardLayout({ userId }) {
         const statsData = await statsRes.json();
         
         // Map goals and stats data to expected structure
+        const dailyGoals = goalsData.daily || {};
         setDashboardData({
           daily: {
-            profit_target: goalsData.profit_daily || 72.08,
-            current_profit: statsData.profit?.current || 0,
-            progress_percent: statsData.profit?.status === 'ahead' ? 100 : 50,
-            time_remaining_minutes: 240,
-            time_needed_minutes: 480,
-            calls_needed: goalsData.calls_daily || 188,
-            current_calls: statsData.calls?.current || 0,
-            reservations_needed: goalsData.reservations_daily || 30,
-            current_reservations: statsData.reservations?.current || 0,
+            profit_target: dailyGoals.profit_target || 72.08,
+            current_profit: dailyGoals.current_profit || statsData.profit?.current || 0,
+            progress_percent: dailyGoals.progress_percent || 0,
+            time_remaining_minutes: dailyGoals.time_remaining_minutes || 240,
+            time_needed_minutes: dailyGoals.time_needed_minutes || 480,
+            calls_needed: dailyGoals.calls_needed || 188,
+            current_calls: dailyGoals.current_calls || statsData.calls?.current || 0,
+            reservations_needed: dailyGoals.reservations_needed || 30,
+            current_reservations: dailyGoals.current_reservations || statsData.reservations?.current || 0,
           },
           stats: statsData
         });
@@ -131,17 +132,18 @@ function DashboardLayout({ userId }) {
             const goalsData = await goalsRes.json();
             const statsData = await statsRes.json();
             
+            const dailyGoals = goalsData.daily || {};
             setDashboardData({
               daily: {
-                profit_target: goalsData.profit_daily || 72.08,
-                current_profit: statsData.profit?.current || 0,
-                progress_percent: statsData.profit?.status === 'ahead' ? 100 : 50,
-                time_remaining_minutes: 240,
-                time_needed_minutes: 480,
-                calls_needed: goalsData.calls_daily || 188,
-                current_calls: statsData.calls?.current || 0,
-                reservations_needed: goalsData.reservations_daily || 30,
-                current_reservations: statsData.reservations?.current || 0,
+                profit_target: dailyGoals.profit_target || 72.08,
+                current_profit: dailyGoals.current_profit || statsData.profit?.current || 0,
+                progress_percent: dailyGoals.progress_percent || 0,
+                time_remaining_minutes: dailyGoals.time_remaining_minutes || 240,
+                time_needed_minutes: dailyGoals.time_needed_minutes || 480,
+                calls_needed: dailyGoals.calls_needed || 188,
+                current_calls: dailyGoals.current_calls || statsData.calls?.current || 0,
+                reservations_needed: dailyGoals.reservations_needed || 30,
+                current_reservations: dailyGoals.current_reservations || statsData.reservations?.current || 0,
               },
               stats: statsData
             });
