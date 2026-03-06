@@ -12,9 +12,15 @@ import { AlertCircle, CheckCircle, Loader } from 'lucide-react';
  */
 export function GoalSetter({ userId, onTargetsUpdated }) {
   const [targets, setTargets] = useState({
-    daily_target: 72.08,
-    weekly_target: 504.56,
-    biweekly_target: 1009.12,
+    profit_daily: 72.08,
+    profit_weekly: 504.56,
+    profit_biweekly: 1009.12,
+    spins_daily: 18.00,
+    spins_weekly: 126.00,
+    spins_biweekly: 252.00,
+    reservations_daily: 16,
+    reservations_weekly: 112,
+    reservations_biweekly: 224,
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -37,9 +43,15 @@ export function GoalSetter({ userId, onTargetsUpdated }) {
       if (response.ok) {
         const data = await response.json();
         setTargets({
-          daily_target: data.profit_daily || 72.08,
-          weekly_target: data.profit_weekly || 504.56,
-          biweekly_target: data.profit_biweekly || 1009.12,
+          profit_daily: data.profit_daily || 72.08,
+          profit_weekly: data.profit_weekly || 504.56,
+          profit_biweekly: data.profit_biweekly || 1009.12,
+          spins_daily: data.spins_daily || 18.00,
+          spins_weekly: data.spins_weekly || 126.00,
+          spins_biweekly: data.spins_biweekly || 252.00,
+          reservations_daily: data.reservations_daily || 16,
+          reservations_weekly: data.reservations_weekly || 112,
+          reservations_biweekly: data.reservations_biweekly || 224,
         });
       }
     } catch (err) {
@@ -59,14 +71,30 @@ export function GoalSetter({ userId, onTargetsUpdated }) {
   const handleAutoCalculate = () => {
     // Auto-calculate based on working days
     // Assuming 5 working days per week, 8 hours per day
-    const dailyTarget = 72.08;
-    const weeklyTarget = dailyTarget * 5; // 5 working days
-    const biweeklyTarget = weeklyTarget * 2; // 2 weeks
+    const profitDaily = 72.08;
+    const profitWeekly = profitDaily * 5; // 5 working days
+    const profitBiweekly = profitWeekly * 2; // 2 weeks
+    
+    // Spins: $18/day fixed
+    const spinsDaily = 18.00;
+    const spinsWeekly = spinsDaily * 7;
+    const spinsBiweekly = spinsWeekly * 2;
+    
+    // Reservations: 16/day
+    const reservationsDaily = 16;
+    const reservationsWeekly = reservationsDaily * 7;
+    const reservationsBiweekly = reservationsWeekly * 2;
 
     setTargets({
-      daily_target: parseFloat(dailyTarget.toFixed(2)),
-      weekly_target: parseFloat(weeklyTarget.toFixed(2)),
-      biweekly_target: parseFloat(biweeklyTarget.toFixed(2)),
+      profit_daily: parseFloat(profitDaily.toFixed(2)),
+      profit_weekly: parseFloat(profitWeekly.toFixed(2)),
+      profit_biweekly: parseFloat(profitBiweekly.toFixed(2)),
+      spins_daily: parseFloat(spinsDaily.toFixed(2)),
+      spins_weekly: parseFloat(spinsWeekly.toFixed(2)),
+      spins_biweekly: parseFloat(spinsBiweekly.toFixed(2)),
+      reservations_daily: reservationsDaily,
+      reservations_weekly: reservationsWeekly,
+      reservations_biweekly: reservationsBiweekly,
     });
     setAutoCalculate(true);
   };
@@ -85,9 +113,15 @@ export function GoalSetter({ userId, onTargetsUpdated }) {
           'Authorization': `Bearer ${localStorage.getItem('access_token')}`
         },
         body: JSON.stringify({
-          profit_daily: targets.daily_target,
-          profit_weekly: targets.weekly_target,
-          profit_biweekly: targets.biweekly_target
+          profit_daily: targets.profit_daily,
+          profit_weekly: targets.profit_weekly,
+          profit_biweekly: targets.profit_biweekly,
+          spins_daily: targets.spins_daily,
+          spins_weekly: targets.spins_weekly,
+          spins_biweekly: targets.spins_biweekly,
+          reservations_daily: targets.reservations_daily,
+          reservations_weekly: targets.reservations_weekly,
+          reservations_biweekly: targets.reservations_biweekly,
         })
       });
 
@@ -113,9 +147,15 @@ export function GoalSetter({ userId, onTargetsUpdated }) {
 
   const handleReset = () => {
     setTargets({
-      daily_target: 72.08,
-      weekly_target: 504.56,
-      biweekly_target: 1009.12,
+      profit_daily: 72.08,
+      profit_weekly: 504.56,
+      profit_biweekly: 1009.12,
+      spins_daily: 18.00,
+      spins_weekly: 126.00,
+      spins_biweekly: 252.00,
+      reservations_daily: 16,
+      reservations_weekly: 112,
+      reservations_biweekly: 224,
     });
     setAutoCalculate(false);
     setSuccess(false);
@@ -142,7 +182,7 @@ export function GoalSetter({ userId, onTargetsUpdated }) {
           <Alert className="bg-green-50 border-green-200">
             <CheckCircle className="h-4 w-4 text-green-600" />
             <AlertDescription className="text-green-800">
-              Profit targets updated successfully! Goals will be recalculated at the next period boundary.
+              All targets updated successfully! Goals will be recalculated at the next period boundary.
             </AlertDescription>
           </Alert>
         )}
@@ -156,74 +196,185 @@ export function GoalSetter({ userId, onTargetsUpdated }) {
           </Alert>
         )}
 
-        <div className="space-y-4">
-          {/* Daily Target */}
-          <div className="space-y-2">
-            <Label htmlFor="daily_target" className="text-base font-medium">
-              Daily Profit Target
-            </Label>
-            <div className="flex items-center gap-2">
-              <span className="text-lg font-semibold">$</span>
-              <Input
-                id="daily_target"
-                type="number"
-                step="0.01"
-                min="0"
-                value={targets.daily_target}
-                onChange={(e) => handleInputChange('daily_target', e.target.value)}
-                placeholder="Enter daily target"
-                className="flex-1"
-              />
+        <div className="space-y-6">
+          {/* PROFIT TARGETS */}
+          <div className="border-b pb-4">
+            <h3 className="font-semibold text-base mb-4">Profit Targets</h3>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="profit_daily" className="text-base font-medium">
+                  Daily Profit Target
+                </Label>
+                <div className="flex items-center gap-2">
+                  <span className="text-lg font-semibold">$</span>
+                  <Input
+                    id="profit_daily"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={targets.profit_daily}
+                    onChange={(e) => handleInputChange('profit_daily', e.target.value)}
+                    placeholder="Enter daily target"
+                    className="flex-1"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="profit_weekly" className="text-base font-medium">
+                  Weekly Profit Target
+                </Label>
+                <div className="flex items-center gap-2">
+                  <span className="text-lg font-semibold">$</span>
+                  <Input
+                    id="profit_weekly"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={targets.profit_weekly}
+                    onChange={(e) => handleInputChange('profit_weekly', e.target.value)}
+                    placeholder="Enter weekly target"
+                    className="flex-1"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="profit_biweekly" className="text-base font-medium">
+                  Biweekly Profit Target
+                </Label>
+                <div className="flex items-center gap-2">
+                  <span className="text-lg font-semibold">$</span>
+                  <Input
+                    id="profit_biweekly"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={targets.profit_biweekly}
+                    onChange={(e) => handleInputChange('profit_biweekly', e.target.value)}
+                    placeholder="Enter biweekly target"
+                    className="flex-1"
+                  />
+                </div>
+              </div>
             </div>
-            <p className="text-xs text-gray-500">
-              Target profit to earn each day
-            </p>
           </div>
 
-          {/* Weekly Target */}
-          <div className="space-y-2">
-            <Label htmlFor="weekly_target" className="text-base font-medium">
-              Weekly Profit Target
-            </Label>
-            <div className="flex items-center gap-2">
-              <span className="text-lg font-semibold">$</span>
-              <Input
-                id="weekly_target"
-                type="number"
-                step="0.01"
-                min="0"
-                value={targets.weekly_target}
-                onChange={(e) => handleInputChange('weekly_target', e.target.value)}
-                placeholder="Enter weekly target"
-                className="flex-1"
-              />
+          {/* SPINS TARGETS */}
+          <div className="border-b pb-4">
+            <h3 className="font-semibold text-base mb-4">Spins Targets</h3>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="spins_daily" className="text-base font-medium">
+                  Daily Spins Target
+                </Label>
+                <div className="flex items-center gap-2">
+                  <span className="text-lg font-semibold">$</span>
+                  <Input
+                    id="spins_daily"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={targets.spins_daily}
+                    onChange={(e) => handleInputChange('spins_daily', e.target.value)}
+                    placeholder="Enter daily target"
+                    className="flex-1"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="spins_weekly" className="text-base font-medium">
+                  Weekly Spins Target
+                </Label>
+                <div className="flex items-center gap-2">
+                  <span className="text-lg font-semibold">$</span>
+                  <Input
+                    id="spins_weekly"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={targets.spins_weekly}
+                    onChange={(e) => handleInputChange('spins_weekly', e.target.value)}
+                    placeholder="Enter weekly target"
+                    className="flex-1"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="spins_biweekly" className="text-base font-medium">
+                  Biweekly Spins Target
+                </Label>
+                <div className="flex items-center gap-2">
+                  <span className="text-lg font-semibold">$</span>
+                  <Input
+                    id="spins_biweekly"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={targets.spins_biweekly}
+                    onChange={(e) => handleInputChange('spins_biweekly', e.target.value)}
+                    placeholder="Enter biweekly target"
+                    className="flex-1"
+                  />
+                </div>
+              </div>
             </div>
-            <p className="text-xs text-gray-500">
-              Target profit to earn each week (Sunday-Saturday)
-            </p>
           </div>
 
-          {/* Biweekly Target */}
-          <div className="space-y-2">
-            <Label htmlFor="biweekly_target" className="text-base font-medium">
-              Biweekly Profit Target
-            </Label>
-            <div className="flex items-center gap-2">
-              <span className="text-lg font-semibold">$</span>
-              <Input
-                id="biweekly_target"
-                type="number"
-                step="0.01"
-                min="0"
-                value={targets.biweekly_target}
-                onChange={(e) => handleInputChange('biweekly_target', e.target.value)}
-                placeholder="Enter biweekly target"
-                className="flex-1"
-              />
+          {/* RESERVATIONS TARGETS */}
+          <div className="border-b pb-4">
+            <h3 className="font-semibold text-base mb-4">Reservations Targets</h3>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="reservations_daily" className="text-base font-medium">
+                  Daily Reservations Target
+                </Label>
+                <Input
+                  id="reservations_daily"
+                  type="number"
+                  step="1"
+                  min="0"
+                  value={targets.reservations_daily}
+                  onChange={(e) => handleInputChange('reservations_daily', e.target.value)}
+                  placeholder="Enter daily target"
+                  className="flex-1"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="reservations_weekly" className="text-base font-medium">
+                  Weekly Reservations Target
+                </Label>
+                <Input
+                  id="reservations_weekly"
+                  type="number"
+                  step="1"
+                  min="0"
+                  value={targets.reservations_weekly}
+                  onChange={(e) => handleInputChange('reservations_weekly', e.target.value)}
+                  placeholder="Enter weekly target"
+                  className="flex-1"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="reservations_biweekly" className="text-base font-medium">
+                  Biweekly Reservations Target
+                </Label>
+                <Input
+                  id="reservations_biweekly"
+                  type="number"
+                  step="1"
+                  min="0"
+                  value={targets.reservations_biweekly}
+                  onChange={(e) => handleInputChange('reservations_biweekly', e.target.value)}
+                  placeholder="Enter biweekly target"
+                  className="flex-1"
+                />
+              </div>
             </div>
-            <p className="text-xs text-gray-500">
-              Target profit to earn every two weeks (1st-15th and 16th-end of month)
-            </p>
           </div>
         </div>
 
@@ -232,18 +383,51 @@ export function GoalSetter({ userId, onTargetsUpdated }) {
           <CardHeader className="pb-2">
             <CardTitle className="text-sm">Target Summary</CardTitle>
           </CardHeader>
-          <CardContent className="text-sm space-y-2">
-            <div className="flex justify-between">
-              <span className="text-gray-600">Daily:</span>
-              <span className="font-medium">${targets.daily_target.toFixed(2)}</span>
+          <CardContent className="text-sm space-y-3">
+            <div>
+              <div className="font-semibold text-gray-700 mb-2">Profit</div>
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-600">Daily:</span>
+                <span className="font-medium">${targets.profit_daily.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-600">Weekly:</span>
+                <span className="font-medium">${targets.profit_weekly.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-600">Biweekly:</span>
+                <span className="font-medium">${targets.profit_biweekly.toFixed(2)}</span>
+              </div>
             </div>
-            <div className="flex justify-between">
-              <span className="text-gray-600">Weekly:</span>
-              <span className="font-medium">${targets.weekly_target.toFixed(2)}</span>
+            <div className="border-t pt-2">
+              <div className="font-semibold text-gray-700 mb-2">Spins</div>
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-600">Daily:</span>
+                <span className="font-medium">${targets.spins_daily.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-600">Weekly:</span>
+                <span className="font-medium">${targets.spins_weekly.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-600">Biweekly:</span>
+                <span className="font-medium">${targets.spins_biweekly.toFixed(2)}</span>
+              </div>
             </div>
-            <div className="flex justify-between">
-              <span className="text-gray-600">Biweekly:</span>
-              <span className="font-medium">${targets.biweekly_target.toFixed(2)}</span>
+            <div className="border-t pt-2">
+              <div className="font-semibold text-gray-700 mb-2">Reservations</div>
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-600">Daily:</span>
+                <span className="font-medium">{targets.reservations_daily}</span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-600">Weekly:</span>
+                <span className="font-medium">{targets.reservations_weekly}</span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-600">Biweekly:</span>
+                <span className="font-medium">{targets.reservations_biweekly}</span>
+              </div>
             </div>
           </CardContent>
         </Card>

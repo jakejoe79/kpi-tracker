@@ -274,12 +274,14 @@ class Booking(BaseModel):
     has_refund_protection: bool = False
     timestamp: datetime = Field(default_factory=datetime.utcnow)
     time_since_last: int = 0
+    booking_time: str = ""
 
 class BookingCreate(BaseModel):
     profit: float
     is_prepaid: bool = False
     has_refund_protection: bool = False
     time_since_last: int = 0
+    booking_time: str = ""
 
 class SpinEntry(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
